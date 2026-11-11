@@ -20,3 +20,7 @@ go.work
 # Ambiente
 .env
 *.local.yaml
+
+.terraform/
+*.tfstate
+*.tfstate.*
