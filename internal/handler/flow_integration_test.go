@@ -325,22 +325,11 @@ func setupFlowSchema(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
 
-	// Drop all tables for a clean slate (order respects FK dependencies)
-	tables := []string{
-		"work_order_service_status_history",
-		"work_order_service_supplies",
-		"work_order_services",
-		"work_orders",
-		"supplies",
-		"services",
-		"vehicles",
-		"customers",
-		"users",
-		"goose_db_version",
+	resetSchema := func() {
+		pool.Exec(ctx, `DROP SCHEMA public CASCADE`)
+		pool.Exec(ctx, `CREATE SCHEMA public`)
 	}
-	for _, table := range tables {
-		pool.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, table))
-	}
+	resetSchema()
 
 	// Apply all migrations via goose
 	goose.SetBaseFS(dbmigrations.Migrations)
@@ -349,9 +338,7 @@ func setupFlowSchema(t *testing.T, pool *pgxpool.Pool) {
 	require.NoError(t, goose.Up(db, "migrations"))
 
 	t.Cleanup(func() {
-		for _, table := range tables {
-			pool.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, table))
-		}
+		resetSchema()
 		db.Close()
 		pool.Close()
 	})
