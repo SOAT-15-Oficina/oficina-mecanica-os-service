@@ -92,3 +92,13 @@ func TestWorkOrderListingExclusionSets(t *testing.T) {
 		WorkOrderListingStatusPriorityOrder,
 	)
 }
+
+func TestCanTransitionFollowsTheSagaStateMachine(t *testing.T) {
+	assert.True(t, CanTransition(WorkOrderStatusWaitingApproval, WorkOrderStatusWaitingPayment))
+	assert.True(t, CanTransition(WorkOrderStatusWaitingPayment, WorkOrderStatusApproved))
+	assert.True(t, CanTransition(WorkOrderStatusApproved, WorkOrderStatusCanceled))
+	assert.False(t, CanTransition(WorkOrderStatusInProgress, WorkOrderStatusCanceled))
+	assert.False(t, CanTransition(WorkOrderStatusWaitingApproval, WorkOrderStatusApproved))
+	assert.False(t, CanTransition(WorkOrderStatusDelivered, WorkOrderStatusReceived))
+	assert.True(t, IsValidWorkOrderStatus(WorkOrderStatusWaitingPayment))
+}

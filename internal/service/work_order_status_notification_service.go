@@ -84,8 +84,10 @@ func statusChangeMessage(previousStatus, newStatus domain.WorkOrderStatus) strin
 	switch newStatus {
 	case domain.WorkOrderStatusInDiagnosis:
 		return "Sua ordem de serviço entrou em diagnóstico. Em breve nossa equipe concluirá a avaliação do veículo."
+	case domain.WorkOrderStatusWaitingPayment:
+		return "Seu orçamento foi aprovado. Você receberá por e-mail o link para pagamento."
 	case domain.WorkOrderStatusApproved:
-		return "Seu orçamento foi aprovado. Em seguida iniciaremos a execução dos serviços autorizados."
+		return "Pagamento confirmado. Em seguida iniciaremos a execução dos serviços autorizados."
 	case domain.WorkOrderStatusCanceled:
 		if previousStatus == domain.WorkOrderStatusWaitingApproval {
 			return "Seu orçamento foi recusado e a ordem de serviço foi cancelada."

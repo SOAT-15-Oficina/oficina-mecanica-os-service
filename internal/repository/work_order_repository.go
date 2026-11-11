@@ -136,10 +136,6 @@ func InsertWorkOrder(ctx context.Context, db DBTX, wo *domain.WorkOrder) (*domai
 	return &result, nil
 }
 
-func (r *workOrderRepository) Create(ctx context.Context, wo *domain.WorkOrder) (*domain.WorkOrder, error) {
-	return InsertWorkOrder(ctx, r.db, wo)
-}
-
 func (r *workOrderRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.WorkOrder, error) {
 	query := fmt.Sprintf(`SELECT %s, %s FROM work_orders wo %s WHERE wo.id = $1`,
 		workOrderColumns("wo."), workOrderJoinColumns, workOrderJoins)

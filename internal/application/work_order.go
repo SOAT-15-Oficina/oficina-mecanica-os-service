@@ -46,7 +46,6 @@ type WorkOrderListResponse struct {
 }
 
 type WorkOrderRepository interface {
-	Create(ctx context.Context, workOrder *domain.WorkOrder) (*domain.WorkOrder, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.WorkOrder, error)
 	FindByCode(ctx context.Context, code string) (*domain.WorkOrder, error)
 	FindAll(ctx context.Context) ([]domain.WorkOrder, error)

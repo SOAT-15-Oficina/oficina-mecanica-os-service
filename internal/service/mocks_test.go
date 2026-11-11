@@ -14,14 +14,6 @@ type mockWorkOrderRepo struct {
 	mock.Mock
 }
 
-func (m *mockWorkOrderRepo) Create(ctx context.Context, wo *domain.WorkOrder) (*domain.WorkOrder, error) {
-	args := m.Called(ctx, wo)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*domain.WorkOrder), args.Error(1)
-}
-
 func (m *mockWorkOrderRepo) FindByID(ctx context.Context, id uuid.UUID) (*domain.WorkOrder, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {

@@ -122,3 +122,20 @@ func TestWorkOrderStatusNotifier_EmailFailureIsBestEffort(t *testing.T) {
 		notifier.NotifyTransition(ctx, wo, domain.WorkOrderStatusFinished)
 	})
 }
+
+func TestStatusChangeMessageCoversEveryNotifiedStatus(t *testing.T) {
+	statuses := []domain.WorkOrderStatus{
+		domain.WorkOrderStatusInDiagnosis, domain.WorkOrderStatusWaitingPayment, domain.WorkOrderStatusApproved,
+		domain.WorkOrderStatusInProgress, domain.WorkOrderStatusFinished, domain.WorkOrderStatusDelivered,
+		domain.WorkOrderStatusCanceled, domain.WorkOrderStatusReceived,
+	}
+	seen := map[string]bool{}
+	for _, status := range statuses {
+		msg := statusChangeMessage(domain.WorkOrderStatusReceived, status)
+		assert.NotEmpty(t, msg)
+		seen[msg] = true
+		assert.NotEmpty(t, domain.WorkOrderStatusLabel(status))
+	}
+	assert.Len(t, seen, len(statuses))
+	assert.Equal(t, "Aguardando pagamento", domain.WorkOrderStatusLabel(domain.WorkOrderStatusWaitingPayment))
+}

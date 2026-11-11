@@ -76,7 +76,3 @@ func (s *SagaInstance) Complete(step string) {
 		s.CompletedSteps = append(s.CompletedSteps, step)
 	}
 }
-
-func (s *SagaInstance) Active() bool {
-	return s.Status == SagaStarted || s.Status == SagaCompensating
-}
