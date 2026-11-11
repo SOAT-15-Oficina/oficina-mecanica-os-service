@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Oficina Mecanica - API (monolito)
+  title: Oficina Mecanica - OS Service
   description: |
     API de gerenciamento da oficina: ordens de servico, catalogos, estoque e
     clientes.

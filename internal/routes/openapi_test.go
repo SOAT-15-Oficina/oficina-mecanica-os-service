@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/config"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/config"
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

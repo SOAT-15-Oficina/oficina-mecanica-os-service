@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/observability"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/observability"
 	"github.com/google/uuid"
 )
 

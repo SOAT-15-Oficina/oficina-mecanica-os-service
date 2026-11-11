@@ -10,8 +10,8 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/auth"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/observability"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/auth"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/observability"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 )

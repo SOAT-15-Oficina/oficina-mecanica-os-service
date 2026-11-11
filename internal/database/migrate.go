@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"os"
 
-	dbmigrations "github.com/SOAT-15-Oficina/oficina-mecanica-monolith/database"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/observability"
+	dbmigrations "github.com/SOAT-15-Oficina/oficina-mecanica-os-service/database"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/observability"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/lib/pq"

@@ -9,7 +9,7 @@ import (
 	slogtrace "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"
 )
 
-const DefaultService = "monolith"
+const DefaultService = "os-service"
 
 var version = "dev"
 

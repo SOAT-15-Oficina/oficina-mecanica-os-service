@@ -1,4 +1,4 @@
-# oficina-mecanica-monolith
+# oficina-mecanica-os-service
 
 API REST de gerenciamento da oficina: ordens de serviço, orçamentos, catálogos
 (clientes, veículos, serviços, insumos, etc) e manutenção administrativa de usuários.

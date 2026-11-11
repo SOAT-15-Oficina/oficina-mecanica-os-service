@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
 )
 
 type WorkOrderNotificationSender struct {

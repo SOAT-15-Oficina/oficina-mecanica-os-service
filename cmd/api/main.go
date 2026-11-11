@@ -5,11 +5,11 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/config"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/database"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/observability"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/routes"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/packages/email"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/config"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/database"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/observability"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/routes"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/packages/email"
 	"github.com/gofiber/fiber/v3"
 )
 

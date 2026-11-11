@@ -3,7 +3,7 @@ package service
 import (
 	"time"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
 )
 
 func statusEnteredAt(wo *domain.WorkOrder, status domain.WorkOrderStatus) time.Time {

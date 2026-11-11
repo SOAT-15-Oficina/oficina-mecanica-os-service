@@ -7,7 +7,7 @@ ARG VERSION=dev
 COPY go.mod go.sum ./
 COPY . ./
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false \
-    -ldflags="-s -w -X github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/observability.version=${VERSION}" \
+    -ldflags="-s -w -X github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/observability.version=${VERSION}" \
     -o /techchallenge ./cmd/api/main.go
 
 # SETUP CONTAINER RELEASE

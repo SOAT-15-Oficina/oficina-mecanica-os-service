@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
 )
 
 var ErrWorkOrderNotFound = errors.New("work order not found")

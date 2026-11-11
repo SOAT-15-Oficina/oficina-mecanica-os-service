@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 )

@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/auth"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/auth"
 )
 
 func main() {

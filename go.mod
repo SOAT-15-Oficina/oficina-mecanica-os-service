@@ -1,4 +1,4 @@
-module github.com/SOAT-15-Oficina/oficina-mecanica-monolith
+module github.com/SOAT-15-Oficina/oficina-mecanica-os-service
 
 go 1.26.1
 
