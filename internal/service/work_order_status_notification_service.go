@@ -16,18 +16,15 @@ type WorkOrderStatusNotifier interface {
 type workOrderStatusNotifier struct {
 	custRepo     application.CustomerRepository
 	statusSender application.StatusChangeSender
-	budgetSvc    BudgetService
 }
 
 func NewWorkOrderStatusNotifier(
 	custRepo application.CustomerRepository,
 	statusSender application.StatusChangeSender,
-	budgetSvc BudgetService,
 ) WorkOrderStatusNotifier {
 	return &workOrderStatusNotifier{
 		custRepo:     custRepo,
 		statusSender: statusSender,
-		budgetSvc:    budgetSvc,
 	}
 }
 
@@ -49,12 +46,6 @@ func (n *workOrderStatusNotifier) NotifyTransition(
 		slog.String(observability.KeyTo, string(newStatus)))
 
 	if newStatus == domain.WorkOrderStatusWaitingApproval {
-		previous := previousStatus
-		if err := n.budgetSvc.GenerateAndSendBudget(ctx, workOrder.ID, &previous); err != nil {
-			logger.LogAttrs(ctx, slog.LevelError, "budget generation failed",
-				observability.Event(observability.EventBudgetSendFailed),
-				observability.Err(err))
-		}
 		return
 	}
 
@@ -68,6 +59,10 @@ func (n *workOrderStatusNotifier) NotifyTransition(
 		logger.LogAttrs(ctx, slog.LevelError, "find customer for status notification",
 			observability.Integration(observability.IntegrationRDS),
 			observability.Err(err))
+		return
+	}
+	if customer.Email == "" {
+		logger.WarnContext(ctx, "customer has no email, status notification skipped")
 		return
 	}
 

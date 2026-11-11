@@ -14,7 +14,10 @@ import (
 	"github.com/google/uuid"
 )
 
-var ErrVehicleNotBelongingToCustomer = errors.New("vehicle does not belong to the given customer")
+var (
+	ErrVehicleNotBelongingToCustomer = errors.New("vehicle does not belong to the given customer")
+	ErrInvalidStatusTransition       = errors.New("invalid status transition")
+)
 
 type WorkOrderService interface {
 	Create(ctx context.Context, workOrder *domain.WorkOrder) (*domain.WorkOrder, error)

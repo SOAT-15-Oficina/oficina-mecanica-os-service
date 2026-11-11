@@ -779,12 +779,11 @@ paths:
     put:
       operationId: putWorkOrdersId
       tags: [Work Orders]
-      summary: Atualizar OS (campos e/ou status)
+      summary: Atualizar campos da OS
       description: |
-        Se o campo `status` for enviado, a transicao de status e processada via maquina de estados.
-        Ao transitar para AGUARDANDO_APROVACAO, o orcamento e enviado por e-mail.
-        Na geracao do orcamento, quando houver insumo com quantidade necessaria maior que o estoque,
-        o prazo estimado do servico no orcamento recebe acrescimo padrao de 2 dias.
+        Altera titulo, descricao e tecnico responsavel. O status e dirigido pela Saga: enviar o
+        campo `status` responde 400. Ao operador restam `POST /work-orders/{id}/deliver` e
+        `POST /work-orders/{id}/cancel`.
       requestBody:
         required: true
         content:
@@ -805,12 +804,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
-        "422":
-          description: Transicao de status invalida
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
 
   /work-orders/{id}/services:
     parameters:
@@ -874,98 +867,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           description: Status da OS nao permite remocao
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /work-orders/{id}/services/{wosId}/start:
-    parameters:
-      - $ref: "#/components/parameters/ResourceId"
-      - name: wosId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    put:
-      operationId: putWorkOrdersIdServicesWosIdStart
-      tags: [Work Orders]
-      summary: Iniciar execucao de um servico individual
-      description: |
-        Transiciona o servico de PENDENTE para EM_EXECUCAO.
-        Requer que a OS esteja em EM_EXECUCAO e que o servico esteja aprovado.
-        Bloqueia se os insumos vinculados excedem o estoque disponivel.
-      responses:
-        <<: *protectedResponses
-        "200":
-          description: Servico iniciado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Servico iniciado com sucesso"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          description: Estoque insuficiente, status invalido ou servico nao pertence a OS
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /work-orders/{id}/services/{wosId}/finalize:
-    parameters:
-      - $ref: "#/components/parameters/ResourceId"
-      - name: wosId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    put:
-      operationId: putWorkOrdersIdServicesWosIdFinalize
-      tags: [Work Orders]
-      summary: Finalizar um servico individual
-      description: |
-        Transiciona o servico de EM_EXECUCAO para FINALIZADO.
-        Da baixa no estoque dos insumos vinculados.
-        Se todos os servicos aprovados estiverem finalizados, a OS auto-transiciona para FINALIZADA.
-      responses:
-        <<: *protectedResponses
-        "200":
-          description: Servico finalizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Servico finalizado com sucesso"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          description: Status invalido ou servico nao pertence a OS
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "500":
-          description: Erro interno
           content:
             application/json:
               schema:
@@ -1089,142 +990,6 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
-  /public/approvals/services/{workOrderServiceId}/approve:
-    parameters:
-      - name: workOrderServiceId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: getPublicApprovalsServicesWorkOrderServiceIdApprove
-      tags: [Public]
-      summary: Aprovar um servico da OS
-      security: []
-      description: |
-        Endpoint chamado pelo cliente (via link no e-mail de orcamento) para aprovar um servico especifico.
-        Quando todos os servicos sao aprovados, a OS transita para APROVADO.
-      responses:
-        "200":
-          description: Servico aprovado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-              example:
-                message: Servico aprovado com sucesso
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /public/approvals/services/{workOrderServiceId}/reject:
-    parameters:
-      - name: workOrderServiceId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: getPublicApprovalsServicesWorkOrderServiceIdReject
-      tags: [Public]
-      summary: Reprovar um servico da OS
-      security: []
-      description: |
-        Endpoint chamado pelo cliente (via link no e-mail de orcamento) para recusar um servico especifico.
-        Quando todos os servicos sao reprovados, a OS transita para CANCELADA.
-      responses:
-        "200":
-          description: Servico reprovado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-              example:
-                message: Servico reprovado com sucesso
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /public/approvals/work-orders/{workOrderId}/approve-all:
-    parameters:
-      - name: workOrderId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: getPublicApprovalsWorkOrdersWorkOrderIdApproveAll
-      tags: [Public]
-      summary: Aprovar todos os servicos de uma OS
-      security: []
-      description: |
-        Endpoint chamado pelo cliente (via link no e-mail de orcamento) para aprovar todos os servicos de uma vez.
-        A OS transita para APROVADO.
-      responses:
-        "200":
-          description: Todos aprovados
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-              example:
-                message: Todos os servicos foram aprovados com sucesso
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /public/approvals/work-orders/{workOrderId}/reject-all:
-    parameters:
-      - name: workOrderId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: getPublicApprovalsWorkOrdersWorkOrderIdRejectAll
-      tags: [Public]
-      summary: Reprovar todos os servicos de uma OS
-      security: []
-      description: |
-        Endpoint chamado pelo cliente (via link no e-mail de orcamento) para recusar todos os servicos de uma vez.
-        A OS transita para CANCELADA.
-      responses:
-        "200":
-          description: Todos reprovados
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-              example:
-                message: Todos os servicos foram reprovados com sucesso
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
 components:
   securitySchemes:
     BearerAuth:
@@ -1299,12 +1064,6 @@ components:
             $ref: "#/components/schemas/Error"
           example:
             error: "insufficient permissions"
-    UnprocessableEntity:
-      description: Transicao de estado ou regra de negocio invalida
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
     InternalServerError:
       description: Erro interno sem exposicao de detalhes
       content:
@@ -1335,12 +1094,6 @@ components:
           ENTREGUE,
           CANCELADA,
         ]
-
-    MessageResponse:
-      type: object
-      properties:
-        message:
-          type: string
 
     User:
       type: object
@@ -1672,9 +1425,6 @@ components:
           type: string
         description:
           type: string
-        status:
-          $ref: "#/components/schemas/WorkOrderStatus"
-          description: Transiciona o status via maquina de estados
         assigned_technician_id:
           type: string
           format: uuid

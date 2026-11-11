@@ -89,25 +89,6 @@ func (m *mockCreationService) RemoveSupplyFromService(ctx context.Context, woID,
 func (m *mockCreationService) RemoveService(ctx context.Context, woID, wosID uuid.UUID) error {
 	return m.Called(ctx, woID, wosID).Error(0)
 }
-func (m *mockCreationService) StartService(ctx context.Context, woID, wosID uuid.UUID) error {
-	return m.Called(ctx, woID, wosID).Error(0)
-}
-func (m *mockCreationService) FinalizeService(ctx context.Context, woID, wosID uuid.UUID) error {
-	return m.Called(ctx, woID, wosID).Error(0)
-}
-
-type mockStatusSvc struct{ mock.Mock }
-
-func (m *mockStatusSvc) TransitionTo(ctx context.Context, workOrderID uuid.UUID, newStatus domain.WorkOrderStatus) (*domain.WorkOrder, error) {
-	args := m.Called(ctx, workOrderID, newStatus)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*domain.WorkOrder), args.Error(1)
-}
-func (m *mockStatusSvc) IsValidTransition(from, to domain.WorkOrderStatus) bool {
-	return m.Called(from, to).Bool(0)
-}
 
 type mockUserRepo struct{ mock.Mock }
 
@@ -188,7 +169,6 @@ func (m *mockUserRepo) FindAll(ctx context.Context) ([]domain.User, error) {
 type woTestDeps struct {
 	woSvc       *mockWorkOrderService
 	creationSvc *mockCreationService
-	statusSvc   *mockStatusSvc
 	userRepo    *mockUserRepo
 }
 
@@ -196,11 +176,10 @@ func setupFullWorkOrderApp() (*fiber.App, *woTestDeps) {
 	deps := &woTestDeps{
 		woSvc:       new(mockWorkOrderService),
 		creationSvc: new(mockCreationService),
-		statusSvc:   new(mockStatusSvc),
 		userRepo:    new(mockUserRepo),
 	}
 	app := fiber.New()
-	h := NewWorkOrderHandler(deps.woSvc, deps.creationSvc, deps.statusSvc, deps.userRepo)
+	h := NewWorkOrderHandler(deps.woSvc, deps.creationSvc, deps.userRepo)
 	g := app.Group("/work-orders")
 	g.Get("/", h.GetAll)
 	g.Get("/:id", h.GetByID)
@@ -213,8 +192,6 @@ func setupFullWorkOrderApp() (*fiber.App, *woTestDeps) {
 	g.Delete("/:id/services/:wosId", h.RemoveService)
 	g.Post("/:id/services/:wosId/supplies", h.AddSupplies)
 	g.Delete("/:id/services/:wosId/supplies/:supplyId", h.RemoveSupplyFromService)
-	g.Post("/:id/services/:wosId/start", h.StartService)
-	g.Post("/:id/services/:wosId/finalize", h.FinalizeService)
 	return app, deps
 }
 
@@ -373,11 +350,11 @@ func TestWorkOrder_Create_Success(t *testing.T) {
 
 func TestWorkOrder_Create_NoToken(t *testing.T) {
 	deps := &woTestDeps{
-		woSvc: new(mockWorkOrderService),
-		creationSvc: new(mockCreationService), statusSvc: new(mockStatusSvc), userRepo: new(mockUserRepo),
+		woSvc:       new(mockWorkOrderService),
+		creationSvc: new(mockCreationService), userRepo: new(mockUserRepo),
 	}
 	app := fiber.New()
-	h := NewWorkOrderHandler(deps.woSvc, deps.creationSvc, deps.statusSvc, deps.userRepo)
+	h := NewWorkOrderHandler(deps.woSvc, deps.creationSvc, deps.userRepo)
 	app.Post("/work-orders", h.Create) // no middleware to set token
 
 	body, _ := json.Marshal(map[string]any{"title": "test"})
@@ -454,47 +431,17 @@ func TestWorkOrder_Update_InvalidID(t *testing.T) {
 	assert.Equal(t, fiber.StatusBadRequest, r.StatusCode)
 }
 
-func TestWorkOrder_Update_WithStatusTransition(t *testing.T) {
+func TestWorkOrder_Update_RejectsStatusChange(t *testing.T) {
 	app, deps := setupFullWorkOrderApp()
 	id := uuid.New()
-	wo := &domain.WorkOrder{ID: id, Status: domain.WorkOrderStatusInDiagnosis}
-	deps.statusSvc.On("TransitionTo", mock.Anything, id, domain.WorkOrderStatusInDiagnosis).Return(wo, nil)
-	deps.woSvc.On("Update", mock.Anything, mock.AnythingOfType("*domain.WorkOrder")).Return(wo, nil)
 
 	body, _ := json.Marshal(map[string]any{"status": domain.WorkOrderStatusInDiagnosis})
 	req := httptest.NewRequest(http.MethodPut, "/work-orders/"+id.String(), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r, err := app.Test(req)
 	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusOK, r.StatusCode)
-}
-
-func TestWorkOrder_Update_StatusTransitionInvalid(t *testing.T) {
-	app, deps := setupFullWorkOrderApp()
-	id := uuid.New()
-	deps.statusSvc.On("TransitionTo", mock.Anything, id, mock.Anything).Return(nil, service.ErrInvalidStatusTransition)
-
-	body, _ := json.Marshal(map[string]any{"status": "ENTREGUE"})
-	req := httptest.NewRequest(http.MethodPut, "/work-orders/"+id.String(), bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusUnprocessableEntity, r.StatusCode)
-}
-
-func TestWorkOrder_Update_StatusTransitionOnly(t *testing.T) {
-	app, deps := setupFullWorkOrderApp()
-	id := uuid.New()
-	wo := &domain.WorkOrder{ID: id, Status: domain.WorkOrderStatusInDiagnosis}
-	deps.statusSvc.On("TransitionTo", mock.Anything, id, domain.WorkOrderStatusInDiagnosis).Return(wo, nil)
-	deps.woSvc.On("Update", mock.Anything, mock.AnythingOfType("*domain.WorkOrder")).Return(wo, nil)
-
-	body, _ := json.Marshal(map[string]any{"status": domain.WorkOrderStatusInDiagnosis})
-	req := httptest.NewRequest(http.MethodPut, "/work-orders/"+id.String(), bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusOK, r.StatusCode)
+	assert.Equal(t, fiber.StatusBadRequest, r.StatusCode)
+	deps.woSvc.AssertNotCalled(t, "Update")
 }
 
 func TestWorkOrder_Update_NotFound(t *testing.T) {
@@ -667,140 +614,6 @@ func TestWorkOrder_AddSupplies_Ownership(t *testing.T) {
 }
 
 // --- StartService tests ---
-
-func TestWorkOrder_StartService_Success(t *testing.T) {
-	app, deps := setupFullWorkOrderApp()
-	woID := uuid.New()
-	wosID := uuid.New()
-	deps.creationSvc.On("StartService", mock.Anything, woID, wosID).Return(nil)
-	deps.woSvc.On("GetByID", mock.Anything, woID).Return(&domain.WorkOrder{ID: woID, Status: domain.WorkOrderStatusInProgress}, nil)
-
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/"+woID.String()+"/services/"+wosID.String()+"/start", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusOK, r.StatusCode)
-}
-
-func TestWorkOrder_StartService_WithDelay(t *testing.T) {
-	app, deps := setupFullWorkOrderApp()
-	woID := uuid.New()
-	wosID := uuid.New()
-	deps.creationSvc.On("StartService", mock.Anything, woID, wosID).Return(nil)
-	deps.woSvc.On("GetByID", mock.Anything, woID).Return(&domain.WorkOrder{ID: woID, Status: domain.WorkOrderStatusInProgress}, nil)
-
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/"+woID.String()+"/services/"+wosID.String()+"/start", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusOK, r.StatusCode)
-}
-
-func TestWorkOrder_StartService_InvalidWoID(t *testing.T) {
-	app, _ := setupFullWorkOrderApp()
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/bad/services/"+uuid.New().String()+"/start", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusBadRequest, r.StatusCode)
-}
-
-func TestWorkOrder_StartService_InvalidWosID(t *testing.T) {
-	app, _ := setupFullWorkOrderApp()
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/"+uuid.New().String()+"/services/bad/start", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusBadRequest, r.StatusCode)
-}
-
-func TestWorkOrder_StartService_NotInProgress(t *testing.T) {
-	app, deps := setupFullWorkOrderApp()
-	woID := uuid.New()
-	wosID := uuid.New()
-	deps.creationSvc.On("StartService", mock.Anything, woID, wosID).Return(service.ErrWorkOrderNotInProgress)
-
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/"+woID.String()+"/services/"+wosID.String()+"/start", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusUnprocessableEntity, r.StatusCode)
-}
-
-func TestWorkOrder_StartService_NotApproved(t *testing.T) {
-	app, deps := setupFullWorkOrderApp()
-	woID := uuid.New()
-	wosID := uuid.New()
-	deps.creationSvc.On("StartService", mock.Anything, woID, wosID).Return(service.ErrServiceNotApproved)
-
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/"+woID.String()+"/services/"+wosID.String()+"/start", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusUnprocessableEntity, r.StatusCode)
-}
-
-func TestWorkOrder_StartService_NotPending(t *testing.T) {
-	app, deps := setupFullWorkOrderApp()
-	woID := uuid.New()
-	wosID := uuid.New()
-	deps.creationSvc.On("StartService", mock.Anything, woID, wosID).Return(service.ErrServiceNotPending)
-
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/"+woID.String()+"/services/"+wosID.String()+"/start", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusUnprocessableEntity, r.StatusCode)
-}
-
-// --- FinalizeService tests ---
-
-func TestWorkOrder_FinalizeService_Success(t *testing.T) {
-	app, deps := setupFullWorkOrderApp()
-	woID := uuid.New()
-	wosID := uuid.New()
-	deps.creationSvc.On("FinalizeService", mock.Anything, woID, wosID).Return(nil)
-
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/"+woID.String()+"/services/"+wosID.String()+"/finalize", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusOK, r.StatusCode)
-}
-
-func TestWorkOrder_FinalizeService_InvalidWoID(t *testing.T) {
-	app, _ := setupFullWorkOrderApp()
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/bad/services/"+uuid.New().String()+"/finalize", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusBadRequest, r.StatusCode)
-}
-
-func TestWorkOrder_FinalizeService_InvalidWosID(t *testing.T) {
-	app, _ := setupFullWorkOrderApp()
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/"+uuid.New().String()+"/services/bad/finalize", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusBadRequest, r.StatusCode)
-}
-
-func TestWorkOrder_FinalizeService_NotInProgress(t *testing.T) {
-	app, deps := setupFullWorkOrderApp()
-	woID := uuid.New()
-	wosID := uuid.New()
-	deps.creationSvc.On("FinalizeService", mock.Anything, woID, wosID).Return(service.ErrWorkOrderNotInProgress)
-
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/"+woID.String()+"/services/"+wosID.String()+"/finalize", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusUnprocessableEntity, r.StatusCode)
-}
-
-func TestWorkOrder_FinalizeService_ServiceNotInProgress(t *testing.T) {
-	app, deps := setupFullWorkOrderApp()
-	woID := uuid.New()
-	wosID := uuid.New()
-	deps.creationSvc.On("FinalizeService", mock.Anything, woID, wosID).Return(service.ErrServiceNotInProgress)
-
-	req := httptest.NewRequest(http.MethodPost, "/work-orders/"+woID.String()+"/services/"+wosID.String()+"/finalize", nil)
-	r, err := app.Test(req)
-	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusUnprocessableEntity, r.StatusCode)
-}
-
-// --- RemoveSupplyFromService tests ---
 
 func TestWorkOrder_RemoveSupply_Success(t *testing.T) {
 	app, deps := setupFullWorkOrderApp()

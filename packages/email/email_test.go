@@ -25,19 +25,13 @@ func TestNew_UnknownProvider(t *testing.T) {
 func TestWorkOrderNotificationSender_NilReceiverSkipsSend(t *testing.T) {
 	var sender *WorkOrderNotificationSender
 
-	err := sender.SendBudget(context.Background(), application.BudgetNotification{})
-	assert.NoError(t, err)
-
-	err = sender.SendPurchaseAlert(context.Background(), application.PurchaseAlertNotification{})
+	err := sender.SendStatusChange(context.Background(), application.StatusChangeNotification{})
 	assert.NoError(t, err)
 }
 
 func TestWorkOrderNotificationSender_NilProviderSkipsSend(t *testing.T) {
 	sender := NewWorkOrderNotificationSender(nil)
 
-	err := sender.SendBudget(context.Background(), application.BudgetNotification{})
-	assert.NoError(t, err)
-
-	err = sender.SendPurchaseAlert(context.Background(), application.PurchaseAlertNotification{})
+	err := sender.SendStatusChange(context.Background(), application.StatusChangeNotification{})
 	assert.NoError(t, err)
 }

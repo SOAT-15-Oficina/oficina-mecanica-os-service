@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/config"
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/handler"
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/repository"
@@ -33,9 +32,8 @@ func RegisterRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, emailP
 	registerCustomer(app, db, cfg.JWT.SecretKey)
 	registerVehicle(app, db, cfg.JWT.SecretKey)
 	registerSupply(app, db, cfg.JWT.SecretKey)
-	registerWorkOrderServicePublic(app, db, emailProv, cfg.Server.BaseURL)
 	registerPublicWorkOrder(app, db)
-	registerWorkOrder(app, db, cfg.JWT.SecretKey, emailProv, cfg.Server.BaseURL)
+	registerWorkOrder(app, db, cfg.JWT.SecretKey)
 	registerWorkshopService(app, db, cfg.JWT.SecretKey)
 }
 
@@ -130,24 +128,17 @@ func registerSupply(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string) {
 	group.Delete("/:id", supplyHandler.Delete)
 }
 
-func registerWorkOrder(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string, emailProv email.Provider, baseURL string) {
+func registerWorkOrder(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string) {
 	workOrderRepo := repository.NewWorkOrderRepository(db)
 	wosRepo := repository.NewWorkOrderServiceRepository(db)
-	customerRepo := repository.NewCustomerRepository(db)
 	vehicleRepo := repository.NewVehicleRepository(db)
 	wsRepo := repository.NewWorkshopServiceRepository(db)
 	supplyRepo := repository.NewSupplyRepository(db)
-	var budgetNotifier application.BudgetNotificationSender
-	if emailProv != nil {
-		budgetNotifier = email.NewWorkOrderNotificationSender(emailProv)
-	}
-	budgetSvc := service.NewBudgetService(workOrderRepo, wosRepo, customerRepo, budgetNotifier, baseURL)
-	statusSvc := service.NewWorkOrderStatusServiceWithNotifications(workOrderRepo, wosRepo, customerRepo, emailProv, baseURL)
 	workOrderSvc := service.NewWorkOrderService(workOrderRepo, vehicleRepo)
-	creationSvc := service.NewWorkOrderCreationService(workOrderRepo, wosRepo, wsRepo, supplyRepo, statusSvc, service.WithBudgetRefresh(budgetSvc))
+	creationSvc := service.NewWorkOrderCreationService(workOrderRepo, wosRepo, wsRepo, supplyRepo)
 	userRepo := repository.NewUserRepository(db)
 	userSvc := service.NewUserService(userRepo)
-	workOrderHandler := handler.NewWorkOrderHandler(workOrderSvc, creationSvc, statusSvc, userSvc)
+	workOrderHandler := handler.NewWorkOrderHandler(workOrderSvc, creationSvc, userSvc)
 
 	group := app.Group("/work-orders", middlewares.Auth(jwtSecretKey), middlewares.RequireRoles(middlewares.RoleAdmin, middlewares.RoleEmployee))
 	group.Post("/", workOrderHandler.Create)
@@ -156,8 +147,6 @@ func registerWorkOrder(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string, em
 	group.Put("/:id", workOrderHandler.Update)
 	group.Post("/:id/services", workOrderHandler.AddServices)
 	group.Delete("/:id/services/:wosId", workOrderHandler.RemoveService)
-	group.Put("/:id/services/:wosId/start", workOrderHandler.StartService)
-	group.Put("/:id/services/:wosId/finalize", workOrderHandler.FinalizeService)
 	group.Post("/:id/services/:wosId/supplies", workOrderHandler.AddSupplies)
 	group.Delete("/:id/services/:wosId/supplies/:supplyId", workOrderHandler.RemoveSupplyFromService)
 }
@@ -171,21 +160,4 @@ func registerPublicWorkOrder(app *fiber.App, db *pgxpool.Pool) {
 
 	public := app.Group("/public/work-orders")
 	public.Get("/:code", publicHandler.GetByCode)
-}
-
-func registerWorkOrderServicePublic(app *fiber.App, db *pgxpool.Pool, emailProv email.Provider, baseURL string) {
-	wosRepo := repository.NewWorkOrderServiceRepository(db)
-	woRepo := repository.NewWorkOrderRepository(db)
-	customerRepo := repository.NewCustomerRepository(db)
-	notificationSender := email.NewWorkOrderNotificationSender(emailProv)
-	statusSvc := service.NewWorkOrderStatusServiceWithNotifications(woRepo, wosRepo, customerRepo, emailProv, baseURL)
-	itemSvc := service.NewWorkOrderItemService(wosRepo, woRepo, statusSvc,
-		service.WithPurchaseAlert(notificationSender, "compras@oficina.com"))
-	wosHandler := handler.NewWorkOrderServiceHandler(itemSvc)
-
-	approval := app.Group("/public/approvals")
-	approval.Get("/services/:workOrderServiceId/approve", wosHandler.Approve)
-	approval.Get("/services/:workOrderServiceId/reject", wosHandler.Reject)
-	approval.Get("/work-orders/:workOrderId/approve-all", wosHandler.ApproveAll)
-	approval.Get("/work-orders/:workOrderId/reject-all", wosHandler.RejectAll)
 }

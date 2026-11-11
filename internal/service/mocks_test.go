@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
@@ -63,15 +62,6 @@ func (m *mockWorkOrderRepo) Update(ctx context.Context, wo *domain.WorkOrder) (*
 	return args.Get(0).(*domain.WorkOrder), args.Error(1)
 }
 
-func (m *mockWorkOrderRepo) TransitionStatus(ctx context.Context, input application.WorkOrderStatusTransitionInput) (*domain.WorkOrder, bool, error) {
-	args := m.Called(ctx, input)
-	if args.Get(0) == nil {
-		return nil, args.Bool(1), args.Error(2)
-	}
-	return args.Get(0).(*domain.WorkOrder), args.Bool(1), args.Error(2)
-}
-
-// mockWorkOrderServiceRepo mocks repository.WorkOrderServiceRepository
 type mockWorkOrderServiceRepo struct {
 	mock.Mock
 }
@@ -92,24 +82,6 @@ func (m *mockWorkOrderServiceRepo) FindByWorkOrderID(ctx context.Context, workOr
 	return args.Get(0).([]domain.WorkOrderService), args.Error(1)
 }
 
-func (m *mockWorkOrderServiceRepo) UpdateApprovalStatus(ctx context.Context, id uuid.UUID, status domain.WorkOrderServiceApprovalStatus) error {
-	return m.Called(ctx, id, status).Error(0)
-}
-
-func (m *mockWorkOrderServiceRepo) UpdateApprovalStatusByWorkOrderID(ctx context.Context, workOrderID uuid.UUID, status domain.WorkOrderServiceApprovalStatus) error {
-	return m.Called(ctx, workOrderID, status).Error(0)
-}
-
-func (m *mockWorkOrderServiceRepo) CalculateTotalForWorkOrder(ctx context.Context, workOrderID uuid.UUID) (int, error) {
-	args := m.Called(ctx, workOrderID)
-	return args.Int(0), args.Error(1)
-}
-
-func (m *mockWorkOrderServiceRepo) CalculateApprovedTotalForWorkOrder(ctx context.Context, workOrderID uuid.UUID) (int, error) {
-	args := m.Called(ctx, workOrderID)
-	return args.Int(0), args.Error(1)
-}
-
 func (m *mockWorkOrderServiceRepo) Create(ctx context.Context, wos *domain.WorkOrderService) (*domain.WorkOrderService, error) {
 	args := m.Called(ctx, wos)
 	if args.Get(0) == nil {
@@ -124,14 +96,6 @@ func (m *mockWorkOrderServiceRepo) CreateBatch(ctx context.Context, items []*dom
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]*domain.WorkOrderService), args.Error(1)
-}
-
-func (m *mockWorkOrderServiceRepo) CreateSupply(ctx context.Context, supply *domain.WorkOrderServiceSupply) (*domain.WorkOrderServiceSupply, error) {
-	args := m.Called(ctx, supply)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*domain.WorkOrderServiceSupply), args.Error(1)
 }
 
 func (m *mockWorkOrderServiceRepo) CreateSupplyBatch(ctx context.Context, items []*domain.WorkOrderServiceSupply) ([]*domain.WorkOrderServiceSupply, error) {
@@ -154,27 +118,6 @@ func (m *mockWorkOrderServiceRepo) DeleteByID(ctx context.Context, id uuid.UUID)
 	return m.Called(ctx, id).Error(0)
 }
 
-func (m *mockWorkOrderServiceRepo) MarkAsStartedByWorkOrderID(ctx context.Context, workOrderID uuid.UUID, startedAt time.Time) error {
-	return m.Called(ctx, workOrderID, startedAt).Error(0)
-}
-
-func (m *mockWorkOrderServiceRepo) MarkAsFinishedByWorkOrderID(ctx context.Context, workOrderID uuid.UUID, finishedAt time.Time) error {
-	return m.Called(ctx, workOrderID, finishedAt).Error(0)
-}
-
-func (m *mockWorkOrderServiceRepo) MarkServiceAsFinished(ctx context.Context, id uuid.UUID, finishedAt time.Time) error {
-	return m.Called(ctx, id, finishedAt).Error(0)
-}
-
-func (m *mockWorkOrderServiceRepo) MarkServiceAsStarted(ctx context.Context, id uuid.UUID, startedAt time.Time) error {
-	return m.Called(ctx, id, startedAt).Error(0)
-}
-
-func (m *mockWorkOrderServiceRepo) HasSupplyShortagesForService(ctx context.Context, workOrderServiceID uuid.UUID) (bool, error) {
-	args := m.Called(ctx, workOrderServiceID)
-	return args.Bool(0), args.Error(1)
-}
-
 func (m *mockWorkOrderServiceRepo) FindApprovedServicesWithShortages(ctx context.Context) ([]application.SupplyShortageAlert, error) {
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
@@ -183,15 +126,6 @@ func (m *mockWorkOrderServiceRepo) FindApprovedServicesWithShortages(ctx context
 	return args.Get(0).([]application.SupplyShortageAlert), args.Error(1)
 }
 
-func (m *mockWorkOrderServiceRepo) FindSupplyShortagesByWorkOrderID(ctx context.Context, workOrderID uuid.UUID) (map[uuid.UUID]bool, error) {
-	args := m.Called(ctx, workOrderID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(map[uuid.UUID]bool), args.Error(1)
-}
-
-// mockVehicleRepo mocks repository.VehicleRepository
 type mockVehicleRepo struct {
 	mock.Mock
 }
@@ -301,35 +235,6 @@ func (m *mockWorkshopServiceRepo) GetAvgExecutionTime(ctx context.Context, filte
 	return args.Get(0).([]domain.AvgExecutionTimeResult), args.Error(1)
 }
 
-func (m *mockWorkshopServiceRepo) SubtractSuppliesFromStock(ctx context.Context, serviceID uuid.UUID) error {
-	return m.Called(ctx, serviceID).Error(0)
-}
-
-// mockStatusService mocks WorkOrderStatusService
-type mockStatusService struct {
-	mock.Mock
-}
-
-func (m *mockStatusService) TransitionTo(ctx context.Context, workOrderID uuid.UUID, newStatus domain.WorkOrderStatus) (*domain.WorkOrder, error) {
-	args := m.Called(ctx, workOrderID, newStatus)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*domain.WorkOrder), args.Error(1)
-}
-
-func (m *mockStatusService) IsValidTransition(from, to domain.WorkOrderStatus) bool {
-	return m.Called(from, to).Bool(0)
-}
-
-type mockBudgetServiceUseCase struct {
-	mock.Mock
-}
-
-func (m *mockBudgetServiceUseCase) GenerateAndSendBudget(ctx context.Context, workOrderID uuid.UUID, previousStatus *domain.WorkOrderStatus) error {
-	return m.Called(ctx, workOrderID, previousStatus).Error(0)
-}
-
 // mockSupplyRepo mocks repository.SupplyRepository
 type mockSupplyRepo struct {
 	mock.Mock
@@ -369,8 +274,4 @@ func (m *mockSupplyRepo) Update(ctx context.Context, supply *domain.Supply) (*do
 
 func (m *mockSupplyRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return m.Called(ctx, id).Error(0)
-}
-
-func (m *mockSupplyRepo) DecrementStockForService(ctx context.Context, workOrderServiceID uuid.UUID) error {
-	return m.Called(ctx, workOrderServiceID).Error(0)
 }

@@ -156,15 +156,3 @@ func (r *supplyRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 	return nil
 }
-
-func (r *supplyRepository) DecrementStockForService(ctx context.Context, workOrderServiceID uuid.UUID) error {
-	query := `
-		UPDATE supplies s
-		SET stock_quantity = s.stock_quantity - woss.supply_quantity,
-		    updated_at = NOW()
-		FROM work_order_service_supplies woss
-		WHERE woss.supply_id = s.id
-		  AND woss.work_order_service_id = $1`
-	_, err := r.db.Exec(ctx, query, workOrderServiceID)
-	return err
-}

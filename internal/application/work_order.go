@@ -49,14 +49,6 @@ type WorkOrderRepository interface {
 	FindAll(ctx context.Context) ([]domain.WorkOrder, error)
 	FindAllWithFilters(ctx context.Context, filters WorkOrderListFilters) (*WorkOrderListResponse, error)
 	Update(ctx context.Context, workOrder *domain.WorkOrder) (*domain.WorkOrder, error)
-	TransitionStatus(ctx context.Context, input WorkOrderStatusTransitionInput) (*domain.WorkOrder, bool, error)
-}
-
-type WorkOrderStatusTransitionInput struct {
-	WorkOrderID uuid.UUID
-	FromStatus  domain.WorkOrderStatus
-	ToStatus    domain.WorkOrderStatus
-	Now         time.Time
 }
 
 type VehicleRepository interface {
@@ -87,7 +79,6 @@ type WorkshopServiceRepository interface {
 	ExistsByTitle(ctx context.Context, title string, excludeID *uuid.UUID) (bool, error)
 	HasWorkOrderLinks(ctx context.Context, id uuid.UUID) (bool, error)
 	GetAvgExecutionTime(ctx context.Context, filters domain.AvgExecutionTimeFilters) ([]domain.AvgExecutionTimeResult, error)
-	SubtractSuppliesFromStock(ctx context.Context, serviceID uuid.UUID) error
 }
 
 type SupplyRepository interface {
@@ -96,7 +87,6 @@ type SupplyRepository interface {
 	FindAll(ctx context.Context) ([]domain.Supply, error)
 	Update(ctx context.Context, supply *domain.Supply) (*domain.Supply, error)
 	Delete(ctx context.Context, id uuid.UUID) error
-	DecrementStockForService(ctx context.Context, workOrderServiceID uuid.UUID) error
 }
 
 type UserRepository interface {
@@ -111,23 +101,12 @@ type UserRepository interface {
 type WorkOrderServiceRepository interface {
 	Create(ctx context.Context, wos *domain.WorkOrderService) (*domain.WorkOrderService, error)
 	CreateBatch(ctx context.Context, items []*domain.WorkOrderService) ([]*domain.WorkOrderService, error)
-	CreateSupply(ctx context.Context, supply *domain.WorkOrderServiceSupply) (*domain.WorkOrderServiceSupply, error)
 	CreateSupplyBatch(ctx context.Context, items []*domain.WorkOrderServiceSupply) ([]*domain.WorkOrderServiceSupply, error)
 	DeleteSupplyForWorkOrderService(ctx context.Context, workOrderServiceID, supplyID uuid.UUID) error
 	DeleteSuppliesByWorkOrderServiceID(ctx context.Context, workOrderServiceID uuid.UUID) error
 	DeleteByID(ctx context.Context, id uuid.UUID) error
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.WorkOrderService, error)
 	FindByWorkOrderID(ctx context.Context, workOrderID uuid.UUID) ([]domain.WorkOrderService, error)
-	FindSupplyShortagesByWorkOrderID(ctx context.Context, workOrderID uuid.UUID) (map[uuid.UUID]bool, error)
-	UpdateApprovalStatus(ctx context.Context, id uuid.UUID, status domain.WorkOrderServiceApprovalStatus) error
-	UpdateApprovalStatusByWorkOrderID(ctx context.Context, workOrderID uuid.UUID, status domain.WorkOrderServiceApprovalStatus) error
-	CalculateTotalForWorkOrder(ctx context.Context, workOrderID uuid.UUID) (int, error)
-	CalculateApprovedTotalForWorkOrder(ctx context.Context, workOrderID uuid.UUID) (int, error)
-	MarkAsStartedByWorkOrderID(ctx context.Context, workOrderID uuid.UUID, startedAt time.Time) error
-	MarkAsFinishedByWorkOrderID(ctx context.Context, workOrderID uuid.UUID, finishedAt time.Time) error
-	MarkServiceAsFinished(ctx context.Context, id uuid.UUID, finishedAt time.Time) error
-	MarkServiceAsStarted(ctx context.Context, id uuid.UUID, startedAt time.Time) error
-	HasSupplyShortagesForService(ctx context.Context, workOrderServiceID uuid.UUID) (bool, error)
 	FindApprovedServicesWithShortages(ctx context.Context) ([]SupplyShortageAlert, error)
 }
 
@@ -141,32 +120,6 @@ type SupplyShortageAlert struct {
 	InStock        int       `json:"in_stock"`
 }
 
-type BudgetNotification struct {
-	CustomerName        string
-	CustomerEmail       string
-	WorkOrderID         uuid.UUID
-	WorkOrderCode       string
-	PreviousStatusLabel string
-	NewStatusLabel      string
-	Amount              string
-	Services            []BudgetNotificationService
-	ApproveAllLink      string
-	RejectAllLink       string
-	BudgetLink          string
-}
-
-type BudgetNotificationService struct {
-	Title       string
-	Amount      string
-	Estimated   string
-	ApproveLink string
-	RejectLink  string
-}
-
-type BudgetNotificationSender interface {
-	SendBudget(ctx context.Context, notification BudgetNotification) error
-}
-
 type StatusChangeNotification struct {
 	CustomerEmail       string
 	CustomerName        string
@@ -178,23 +131,4 @@ type StatusChangeNotification struct {
 
 type StatusChangeSender interface {
 	SendStatusChange(ctx context.Context, notification StatusChangeNotification) error
-}
-
-type PurchaseAlertNotification struct {
-	To             string
-	WorkOrderCode  string
-	WorkOrderTitle string
-	Items          []PurchaseAlertNotificationItem
-}
-
-type PurchaseAlertNotificationItem struct {
-	ServiceTitle string
-	SupplyTitle  string
-	Required     int
-	InStock      int
-	ToBuy        int
-}
-
-type PurchaseAlertSender interface {
-	SendPurchaseAlert(ctx context.Context, notification PurchaseAlertNotification) error
 }

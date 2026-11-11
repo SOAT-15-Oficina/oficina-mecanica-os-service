@@ -405,3 +405,12 @@ func TestCreate_MissingVehicleID_ReturnsError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, out)
 }
+
+func makeWO(id uuid.UUID, status domain.WorkOrderStatus) *domain.WorkOrder {
+	return &domain.WorkOrder{
+		ID:        id,
+		Status:    status,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+}
