@@ -8,9 +8,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Cadastro e emissao de credencial vivem no oficina-mecanica-serverless. Aqui
-// restam a leitura e a manutencao administrativa de usuarios, que o dominio de
-// ordens de servico consome via GetByUsername.
 type UserService interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
 	GetByUsername(ctx context.Context, username string) (*domain.User, error)

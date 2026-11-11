@@ -44,6 +44,7 @@ func RegisterRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, orches
 
 	registerSwagger(app)
 	registerUsers(app, db, cfg.JWT.SecretKey)
+	registerInternal(app, db, internalToken(cfg))
 	registerCustomer(app, db, cfg.JWT.SecretKey)
 	registerVehicle(app, db, cfg.JWT.SecretKey)
 	registerSupply(app, db, cfg.JWT.SecretKey)
@@ -72,9 +73,6 @@ func registerHealthRoutes(app *fiber.App, db databasePinger) {
 	})
 }
 
-// POST /auth/register e POST /auth/login sao servidos pela Lambda no
-// oficina-mecanica-serverless, roteados pelo API Gateway. O monolito apenas
-// valida o token emitido la e mantem a manutencao administrativa de usuarios.
 func registerUsers(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string) {
 	userRepo := repository.NewUserRepository(db)
 	userSvc := service.NewUserService(userRepo)
@@ -85,6 +83,21 @@ func registerUsers(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string) {
 	users.Get("/:id", userHandler.GetByID)
 	users.Put("/:id", userHandler.Update)
 	users.Delete("/:id", userHandler.Delete)
+}
+
+func internalToken(cfg *config.Config) string {
+	if cfg.Internal == nil {
+		return ""
+	}
+	return cfg.Internal.ServiceToken
+}
+
+func registerInternal(app *fiber.App, db *pgxpool.Pool, serviceToken string) {
+	internalHandler := handler.NewInternalHandler(service.NewCredentialService(repository.NewUserRepository(db)))
+
+	group := app.Group("/internal", middlewares.ServiceToken(serviceToken))
+	group.Post("/credentials/verify", internalHandler.VerifyCredentials)
+	group.Post("/users", internalHandler.CreateUser)
 }
 
 func registerCustomer(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string) {

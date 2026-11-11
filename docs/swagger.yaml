@@ -39,6 +39,8 @@ tags:
     description: Endpoints publicos (sem autenticacao)
   - name: Reports
     description: Relatorios de gestao administrativa
+  - name: Internal
+    description: Chamadas servico a servico (Lambda de autenticacao), com X-Service-Token
 
 security:
   - BearerAuth: []
@@ -159,6 +161,65 @@ paths:
           $ref: "#/components/responses/Conflict"
 
   # ── Customers ─────────────────────────────────────────
+  /internal/credentials/verify:
+    post:
+      operationId: postInternalCredentialsVerify
+      tags: [Internal]
+      summary: Verificar usuario e senha (usado pela Lambda de login)
+      security:
+        - ServiceToken: []
+      description: |
+        Hash argon2id no mesmo formato da Lambda. Usuario inexistente e senha errada respondem
+        o mesmo 401, sem revelar quais usuarios existem.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialsRequest"
+      responses:
+        "200":
+          description: Credencial valida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /internal/users:
+    post:
+      operationId: postInternalUsers
+      tags: [Internal]
+      summary: Cadastrar usuario (usado pela Lambda de registro)
+      security:
+        - ServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInternalUserRequest"
+      responses:
+        "201":
+          description: Usuario criado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   /customers:
     post:
       operationId: postCustomers
@@ -1098,6 +1159,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    ServiceToken:
+      type: apiKey
+      in: header
+      name: X-Service-Token
 
   parameters:
     ResourceId:
@@ -1941,3 +2006,26 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    CredentialsRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+
+    CreateInternalUserRequest:
+      type: object
+      required: [username, password, role]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        role:
+          type: string
+          enum: [admin, employee]
