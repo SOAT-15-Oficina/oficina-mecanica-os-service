@@ -185,6 +185,69 @@ jobs:
           echo "Quality Gate: ${QUALITY_GATE_STATUS:-INDISPONIVEL}"
           test "${QUALITY_GATE_STATUS:-}" = OK
 
+  bdd:
+    if: github.event_name == 'pull_request'
+    needs: [test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STACK: ${{ github.workspace }}/stack
+      GATEWAY_PORT: "8080"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: stack/oficina-mecanica-os-service
+
+      - uses: actions/checkout@v4
+        with:
+          repository: SOAT-15-Oficina/oficina-mecanica-infrastructure
+          path: stack/oficina-mecanica-infrastructure
+
+      - uses: actions/checkout@v4
+        with:
+          repository: SOAT-15-Oficina/oficina-mecanica-billing-service
+          path: stack/oficina-mecanica-billing-service
+
+      - uses: actions/checkout@v4
+        with:
+          repository: SOAT-15-Oficina/oficina-mecanica-execution-service
+          path: stack/oficina-mecanica-execution-service
+
+      - uses: actions/checkout@v4
+        with:
+          repository: SOAT-15-Oficina/oficina-mecanica-serverless
+          path: stack/oficina-mecanica-serverless
+
+      - uses: actions/checkout@v4
+        with:
+          repository: SOAT-15-Oficina/oficina-mecanica-frontend
+          path: stack/oficina-mecanica-frontend
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: stack/oficina-mecanica-os-service/go.sum
+
+      - name: Start local stack
+        working-directory: stack/oficina-mecanica-infrastructure
+        env:
+          OS_SERVICE_CONTEXT: ${{ github.workspace }}/stack/oficina-mecanica-os-service
+        run: docker compose -f local/docker-compose.local.yml up -d --build --wait
+
+      - name: Run BDD scenarios
+        working-directory: stack/oficina-mecanica-os-service/tests/bdd
+        env:
+          BDD_API_URL: http://localhost:8080/api
+          BDD_MPFAKE_URL: http://localhost:8095
+        run: go test -tags bdd -count=1 -v .
+
+      - name: Dump service logs
+        if: failure()
+        working-directory: stack/oficina-mecanica-infrastructure
+        env:
+          OS_SERVICE_CONTEXT: ${{ github.workspace }}/stack/oficina-mecanica-os-service
+        run: docker compose -f local/docker-compose.local.yml logs --no-color --tail=300 os-service billing execution lambda
+
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: [lint, test]

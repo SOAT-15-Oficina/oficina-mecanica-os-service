@@ -269,6 +269,34 @@ curl -XPOST localhost:8090/internal/users -H 'X-Service-Token: local-internal-to
 JWT_SECRET_KEY=local-dev-secret go run ./tests/tools/token -role admin -user admin
 ```
 
+## Teste BDD do fluxo completo
+
+`tests/bdd/` exercita a Saga atravessando os três microsserviços reais, com
+[godog](https://github.com/cucumber/godog) e cenários em português em
+`tests/bdd/features/ciclo_da_ordem_de_servico.feature`:
+
+| Cenário | O que prova |
+|---|---|
+| OS paga é executada até o fim | caminho feliz: 7 transições na ordem, saga `COMPLETED` |
+| cliente reprova o orçamento | caso A: compensação cancela a ficha da bancada |
+| pagamento recusado pelo Mercado Pago | caso B: cancela orçamento e ficha |
+| bancada recusa o reparo depois do pagamento | caso C: estorno no Mercado Pago, reserva liberada, ficha cancelada |
+
+Roda contra o ambiente local completo do `oficina-mecanica-infrastructure`:
+
+```bash
+cd ../oficina-mecanica-infrastructure
+docker compose -f local/docker-compose.local.yml up -d --build --wait
+cd ../oficina-mecanica-monolith/tests/bdd
+go test -tags bdd -count=1 -v .
+```
+
+`BDD_API_URL` (padrão `http://localhost:8080/api`) e `BDD_MPFAKE_URL` (padrão
+`http://localhost:8095`) apontam para outro ambiente. A build tag `bdd` deixa
+esses testes fora do `go test ./...` comum e da métrica de cobertura. No CI, o
+job `bdd` faz checkout dos repositórios irmãos, sobe o mesmo compose e roda os
+cenários em todo Pull Request.
+
 ## Testes e cobertura
 
 ```bash
