@@ -25,6 +25,7 @@ type WorkOrderService interface {
 	GetAll(ctx context.Context) ([]domain.WorkOrder, error)
 	GetAllWithFilters(ctx context.Context, filters application.WorkOrderListFilters) (*application.WorkOrderListResponse, error)
 	Update(ctx context.Context, workOrder *domain.WorkOrder) (*domain.WorkOrder, error)
+	History(ctx context.Context, id uuid.UUID) ([]domain.WorkOrderStatusChange, error)
 }
 
 type workOrderService struct {
@@ -170,4 +171,11 @@ func (s *workOrderService) GetAllWithFilters(ctx context.Context, filters applic
 	}
 
 	return s.repo.FindAllWithFilters(ctx, filters)
+}
+
+func (s *workOrderService) History(ctx context.Context, id uuid.UUID) ([]domain.WorkOrderStatusChange, error) {
+	if _, err := s.repo.FindByID(ctx, id); err != nil {
+		return nil, err
+	}
+	return s.repo.FindStatusHistory(ctx, id)
 }

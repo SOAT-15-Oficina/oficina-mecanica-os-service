@@ -19,6 +19,11 @@ type PublicServiceView struct {
 	ApprovalStatus domain.WorkOrderServiceApprovalStatus `json:"approval_status"`
 }
 
+type PublicStatusChange struct {
+	Status    domain.WorkOrderStatus `json:"status"`
+	ChangedAt time.Time              `json:"changed_at"`
+}
+
 type PublicWorkOrderView struct {
 	Code                     string                 `json:"code"`
 	Status                   domain.WorkOrderStatus `json:"status"`
@@ -30,6 +35,8 @@ type PublicWorkOrderView struct {
 	FinishedAt               *time.Time             `json:"finished_at,omitempty"`
 	DeliveredAt              *time.Time             `json:"delivered_at,omitempty"`
 	Services                 []PublicServiceView    `json:"services"`
+	History                  []PublicStatusChange   `json:"history"`
+	PaymentURL               *string                `json:"payment_url,omitempty"`
 }
 
 type PublicWorkOrderService interface {
@@ -92,6 +99,20 @@ func (s *publicWorkOrderService) GetPublicStatus(ctx context.Context, code, docu
 		}
 	}
 
+	changes, err := s.woRepo.FindStatusHistory(ctx, wo.ID)
+	if err != nil {
+		return nil, err
+	}
+	history := make([]PublicStatusChange, len(changes))
+	for i, change := range changes {
+		history[i] = PublicStatusChange{Status: change.To, ChangedAt: change.ChangedAt}
+	}
+
+	var paymentURL *string
+	if wo.Status == domain.WorkOrderStatusWaitingPayment {
+		paymentURL = wo.PaymentURL
+	}
+
 	return &PublicWorkOrderView{
 		Code:                     wo.Code,
 		Status:                   wo.Status,
@@ -103,5 +124,7 @@ func (s *publicWorkOrderService) GetPublicStatus(ctx context.Context, code, docu
 		FinishedAt:               wo.FinishedAt,
 		DeliveredAt:              wo.DeliveredAt,
 		Services:                 svcViews,
+		History:                  history,
+		PaymentURL:               paymentURL,
 	}, nil
 }

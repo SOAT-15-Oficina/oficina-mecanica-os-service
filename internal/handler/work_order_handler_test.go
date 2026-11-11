@@ -65,6 +65,14 @@ func (m *mockWorkOrderService) Update(ctx context.Context, wo *domain.WorkOrder)
 	return args.Get(0).(*domain.WorkOrder), args.Error(1)
 }
 
+func (m *mockWorkOrderService) History(ctx context.Context, id uuid.UUID) ([]domain.WorkOrderStatusChange, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.WorkOrderStatusChange), args.Error(1)
+}
+
 // --- Additional mocks for full work order handler testing ---
 
 type mockCreationService struct{ mock.Mock }

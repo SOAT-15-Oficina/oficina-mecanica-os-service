@@ -31,6 +31,10 @@ func mapErrorResponse(c fiber.Ctx, err error, notFoundMsg string) (bool, error) 
 		return true, c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	if errors.Is(err, application.ErrSagaNotCancelable) {
+		return true, c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+	}
+
 	if errors.Is(err, application.ErrNotFound) {
 		return true, c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": notFoundMsg})
 	}
