@@ -9,7 +9,10 @@ import (
 	"github.com/google/uuid"
 )
 
-var ErrNotFound = errors.New("not found")
+var (
+	ErrNotFound          = errors.New("not found")
+	ErrSagaNotCancelable = errors.New("work order can no longer be canceled: saga is past the pivot or already finished")
+)
 
 // ValidationError represents input that is syntactically valid but violates
 // the API contract. Handlers translate it to HTTP 400 without treating it as
@@ -49,6 +52,17 @@ type WorkOrderRepository interface {
 	FindAll(ctx context.Context) ([]domain.WorkOrder, error)
 	FindAllWithFilters(ctx context.Context, filters WorkOrderListFilters) (*WorkOrderListResponse, error)
 	Update(ctx context.Context, workOrder *domain.WorkOrder) (*domain.WorkOrder, error)
+	FindStatusHistory(ctx context.Context, workOrderID uuid.UUID) ([]domain.WorkOrderStatusChange, error)
+}
+
+type WorkOrderOpener interface {
+	Open(ctx context.Context, workOrder *domain.WorkOrder, vehicle *domain.Vehicle) error
+}
+
+type WorkOrderLifecycle interface {
+	Deliver(ctx context.Context, workOrderID uuid.UUID) error
+	Cancel(ctx context.Context, workOrderID uuid.UUID) (*domain.SagaInstance, error)
+	Get(ctx context.Context, workOrderID uuid.UUID) (*domain.SagaInstance, error)
 }
 
 type VehicleRepository interface {

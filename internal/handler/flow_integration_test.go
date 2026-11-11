@@ -37,6 +37,7 @@ import (
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/auth"
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/repository"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/saga"
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/service"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
@@ -73,7 +74,8 @@ func setupFlowApp(t *testing.T) (*fiber.App, *pgxpool.Pool) {
 	vehicleSvc := service.NewVehicleService(vehicleRepo)
 	supplySvc := service.NewSupplyService(supplyRepo, wosRepo)
 	wsSvc := service.NewWorkshopServiceManager(wsRepo)
-	woSvc := service.NewWorkOrderService(woRepo, vehicleRepo)
+	orchestrator := saga.New(pool, saga.Config{ExecutionInbox: "execution-inbox", BillingInbox: "billing-inbox", CommandTimeout: time.Minute}, nil)
+	woSvc := service.NewWorkOrderService(woRepo, vehicleRepo, orchestrator)
 	creationSvc := service.NewWorkOrderCreationService(woRepo, wosRepo, wsRepo, supplyRepo)
 	userSvc := service.NewUserService(userRepo)
 	publicSvc := service.NewPublicWorkOrderService(woRepo, customerRepo, wosRepo)

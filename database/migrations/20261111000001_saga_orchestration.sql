@@ -16,10 +16,11 @@ CREATE TABLE "work_order_status_history" (
   "to_status" varchar(30) NOT NULL,
   "cause" varchar(80) NOT NULL,
   "message_id" uuid,
-  "changed_at" timestamptz NOT NULL DEFAULT now()
+  "changed_at" timestamptz NOT NULL DEFAULT now(),
+  "seq" bigserial NOT NULL
 );
 
-CREATE INDEX idx_work_order_status_history_wo ON "work_order_status_history" ("work_order_id", "changed_at");
+CREATE INDEX idx_work_order_status_history_wo ON "work_order_status_history" ("work_order_id", "seq");
 
 INSERT INTO "work_order_status_history" ("id", "work_order_id", "from_status", "to_status", "cause", "changed_at")
 SELECT gen_random_uuid(), "id", NULL, "status", 'migration', "updated_at" FROM "work_orders";

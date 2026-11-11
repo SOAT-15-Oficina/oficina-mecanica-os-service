@@ -8,6 +8,7 @@ import (
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/handler"
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/repository"
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/routes/middlewares"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/saga"
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/service"
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/packages/email"
 	"github.com/gofiber/fiber/v3"
@@ -18,7 +19,21 @@ type databasePinger interface {
 	Ping(context.Context) error
 }
 
-func RegisterRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, emailProv email.Provider) {
+func NewOrchestrator(db *pgxpool.Pool, cfg *config.Config, emailProv email.Provider) *saga.Orchestrator {
+	notifier := service.NewWorkOrderStatusNotifier(repository.NewCustomerRepository(db), email.NewWorkOrderNotificationSender(emailProv))
+	return saga.New(db, saga.Config{
+		ExecutionInbox:  cfg.Messaging.ExecutionInboxURL,
+		BillingInbox:    cfg.Messaging.BillingInboxURL,
+		DefaultBranch:   cfg.Saga.DefaultBranch,
+		CommandTimeout:  cfg.Saga.CommandTimeout,
+		ApprovalTimeout: cfg.Saga.ApprovalTimeout,
+		PaymentTimeout:  cfg.Saga.PaymentTimeout,
+		MaxAttempts:     cfg.Saga.MaxAttempts,
+		Tick:            cfg.Saga.Tick,
+	}, notifier)
+}
+
+func RegisterRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, orchestrator *saga.Orchestrator) {
 	app.Use(middlewares.Observability())
 
 	if db == nil {
@@ -33,7 +48,7 @@ func RegisterRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, emailP
 	registerVehicle(app, db, cfg.JWT.SecretKey)
 	registerSupply(app, db, cfg.JWT.SecretKey)
 	registerPublicWorkOrder(app, db)
-	registerWorkOrder(app, db, cfg.JWT.SecretKey)
+	registerWorkOrder(app, db, cfg.JWT.SecretKey, orchestrator)
 	registerWorkshopService(app, db, cfg.JWT.SecretKey)
 }
 
@@ -128,13 +143,13 @@ func registerSupply(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string) {
 	group.Delete("/:id", supplyHandler.Delete)
 }
 
-func registerWorkOrder(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string) {
+func registerWorkOrder(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string, orchestrator *saga.Orchestrator) {
 	workOrderRepo := repository.NewWorkOrderRepository(db)
 	wosRepo := repository.NewWorkOrderServiceRepository(db)
 	vehicleRepo := repository.NewVehicleRepository(db)
 	wsRepo := repository.NewWorkshopServiceRepository(db)
 	supplyRepo := repository.NewSupplyRepository(db)
-	workOrderSvc := service.NewWorkOrderService(workOrderRepo, vehicleRepo)
+	workOrderSvc := service.NewWorkOrderService(workOrderRepo, vehicleRepo, orchestrator)
 	creationSvc := service.NewWorkOrderCreationService(workOrderRepo, wosRepo, wsRepo, supplyRepo)
 	userRepo := repository.NewUserRepository(db)
 	userSvc := service.NewUserService(userRepo)

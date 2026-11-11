@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 type ServerConfig struct {
 	Environment string `mapstructure:"SERVER_ENVIRONMENT"`
 	Port        string `mapstructure:"SERVER_PORT"`
@@ -40,11 +42,37 @@ type EmailConfig struct {
 	From     string `mapstructure:"EMAIL_FROM"`
 }
 
+type MessagingConfig struct {
+	Endpoint           string
+	Region             string
+	InboxQueueURL      string
+	BillingInboxURL    string
+	ExecutionInboxURL  string
+	PollWait           time.Duration
+	OutboxPollInterval time.Duration
+}
+
+type InternalConfig struct {
+	ServiceToken string
+}
+
+type SagaConfig struct {
+	Tick            time.Duration
+	CommandTimeout  time.Duration
+	MaxAttempts     int
+	ApprovalTimeout time.Duration
+	PaymentTimeout  time.Duration
+	DefaultBranch   string
+}
+
 type Config struct {
-	Server   *ServerConfig
-	Database *DatabaseConfig
-	Cache    *CacheConfig
-	JWT      *JWTConfig
-	AWS      *AWSConfig
-	Email    *EmailConfig
+	Server    *ServerConfig
+	Database  *DatabaseConfig
+	Cache     *CacheConfig
+	JWT       *JWTConfig
+	AWS       *AWSConfig
+	Email     *EmailConfig
+	Messaging *MessagingConfig
+	Internal  *InternalConfig
+	Saga      *SagaConfig
 }

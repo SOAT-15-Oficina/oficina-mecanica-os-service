@@ -10,6 +10,7 @@ import (
 )
 
 func TestNewClientsHonoursEndpoint(t *testing.T) {
+	t.Setenv("AWS_ENDPOINT_URL", "")
 	t.Setenv("AWS_ACCESS_KEY_ID", "test")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "test")
 

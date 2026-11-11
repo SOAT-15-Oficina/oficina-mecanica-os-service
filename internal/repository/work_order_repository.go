@@ -11,16 +11,85 @@ import (
 	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type WorkOrderRepository interface {
-	Create(ctx context.Context, workOrder *domain.WorkOrder) (*domain.WorkOrder, error)
-	FindByID(ctx context.Context, id uuid.UUID) (*domain.WorkOrder, error)
-	FindByCode(ctx context.Context, code string) (*domain.WorkOrder, error)
-	FindAll(ctx context.Context) ([]domain.WorkOrder, error)
-	FindAllWithFilters(ctx context.Context, filters application.WorkOrderListFilters) (*application.WorkOrderListResponse, error)
-	Update(ctx context.Context, workOrder *domain.WorkOrder) (*domain.WorkOrder, error)
+type DBTX interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+var workOrderColumnNames = []string{
+	"id", "code", "title", "description", "customer_id", "vehicle_id", "opened_by_user_id",
+	"assigned_technician_id", "status", "branch", "total_estimated_price_cents", "approved_total_cents",
+	"payment_url", "received_at", "quote_sent_at", "approved_at", "started_at", "finished_at",
+	"delivered_at", "created_at", "updated_at",
+}
+
+const workOrderJoins = `
+		JOIN customers c ON wo.customer_id = c.id
+		JOIN vehicles v ON wo.vehicle_id = v.id
+		LEFT JOIN users t ON wo.assigned_technician_id = t.id`
+
+const workOrderJoinColumns = `c.id, c.name, c.document,
+		v.id, v.license_plate, v.brand, v.model, v.year,
+		t.id, t.username, t.role`
+
+func workOrderColumns(prefix string) string {
+	cols := make([]string, len(workOrderColumnNames))
+	for i, name := range workOrderColumnNames {
+		cols[i] = prefix + name
+	}
+	return strings.Join(cols, ", ")
+}
+
+func workOrderDest(wo *domain.WorkOrder) []any {
+	return []any{
+		&wo.ID, &wo.Code, &wo.Title, &wo.Description, &wo.CustomerID, &wo.VehicleID, &wo.OpenedByUserID,
+		&wo.AssignedTechnicianID, &wo.Status, &wo.Branch, &wo.TotalEstimatedPriceCents, &wo.ApprovedTotalCents,
+		&wo.PaymentURL, &wo.ReceivedAt, &wo.QuoteSentAt, &wo.ApprovedAt, &wo.StartedAt, &wo.FinishedAt,
+		&wo.DeliveredAt, &wo.CreatedAt, &wo.UpdatedAt,
+	}
+}
+
+type joinedWorkOrder struct {
+	wo                 domain.WorkOrder
+	customer           domain.WorkOrderCustomer
+	vehicle            domain.WorkOrderVehicle
+	technicianID       *uuid.UUID
+	technicianUsername *string
+	technicianRole     *domain.UserRole
+}
+
+func (j *joinedWorkOrder) dest() []any {
+	return append(workOrderDest(&j.wo),
+		&j.customer.ID, &j.customer.Name, &j.customer.Document,
+		&j.vehicle.ID, &j.vehicle.LicensePlate, &j.vehicle.Brand, &j.vehicle.Model, &j.vehicle.Year,
+		&j.technicianID, &j.technicianUsername, &j.technicianRole,
+	)
+}
+
+func (j *joinedWorkOrder) result() domain.WorkOrder {
+	wo := j.wo
+	customer := j.customer
+	vehicle := j.vehicle
+	wo.Customer = &customer
+	wo.Vehicle = &vehicle
+	if j.technicianID != nil && j.technicianUsername != nil && j.technicianRole != nil {
+		wo.AssignedTechnician = &domain.WorkOrderTechnician{
+			ID: *j.technicianID, Username: *j.technicianUsername, Role: *j.technicianRole,
+		}
+	}
+	return wo
+}
+
+func notFound(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.ErrNotFound
+	}
+	return err
 }
 
 type workOrderRepository struct {
@@ -31,23 +100,7 @@ func NewWorkOrderRepository(db *pgxpool.Pool) application.WorkOrderRepository {
 	return &workOrderRepository{db: db}
 }
 
-func (r *workOrderRepository) Create(ctx context.Context, wo *domain.WorkOrder) (*domain.WorkOrder, error) {
-	query := `
-		INSERT INTO work_orders (
-			id, code, title, description, customer_id, vehicle_id, opened_by_user_id, 
-			assigned_technician_id, status, total_estimated_price_cents, received_at, 
-			quote_sent_at, approved_at, started_at, finished_at, delivered_at, 
-			created_at, updated_at
-		)
-		VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
-		)
-		RETURNING 
-			id, code, title, description, customer_id, vehicle_id, opened_by_user_id, 
-			assigned_technician_id, status, total_estimated_price_cents, received_at, 
-			quote_sent_at, approved_at, started_at, finished_at, delivered_at, 
-			created_at, updated_at`
-
+func InsertWorkOrder(ctx context.Context, db DBTX, wo *domain.WorkOrder) (*domain.WorkOrder, error) {
 	if wo.ID == uuid.Nil {
 		wo.ID = uuid.New()
 	}
@@ -58,127 +111,65 @@ func (r *workOrderRepository) Create(ctx context.Context, wo *domain.WorkOrder) 
 	if wo.UpdatedAt.IsZero() {
 		wo.UpdatedAt = now
 	}
+	if wo.Branch == "" {
+		wo.Branch = "MATRIZ"
+	}
+
+	placeholders := make([]string, len(workOrderColumnNames))
+	for i := range placeholders {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+	}
+	query := fmt.Sprintf(`INSERT INTO work_orders (%s) VALUES (%s) RETURNING %s`,
+		workOrderColumns(""), strings.Join(placeholders, ", "), workOrderColumns(""))
+
+	args := []any{
+		wo.ID, wo.Code, wo.Title, wo.Description, wo.CustomerID, wo.VehicleID, wo.OpenedByUserID,
+		wo.AssignedTechnicianID, wo.Status, wo.Branch, wo.TotalEstimatedPriceCents, wo.ApprovedTotalCents,
+		wo.PaymentURL, wo.ReceivedAt, wo.QuoteSentAt, wo.ApprovedAt, wo.StartedAt, wo.FinishedAt,
+		wo.DeliveredAt, wo.CreatedAt, wo.UpdatedAt,
+	}
 
 	var result domain.WorkOrder
-	err := r.db.QueryRow(ctx, query,
-		wo.ID, wo.Code, wo.Title, wo.Description, wo.CustomerID, wo.VehicleID, wo.OpenedByUserID,
-		wo.AssignedTechnicianID, wo.Status, wo.TotalEstimatedPriceCents, wo.ReceivedAt,
-		wo.QuoteSentAt, wo.ApprovedAt, wo.StartedAt, wo.FinishedAt, wo.DeliveredAt,
-		wo.CreatedAt, wo.UpdatedAt).
-		Scan(
-			&result.ID, &result.Code, &result.Title, &result.Description, &result.CustomerID, &result.VehicleID, &result.OpenedByUserID,
-			&result.AssignedTechnicianID, &result.Status, &result.TotalEstimatedPriceCents, &result.ReceivedAt,
-			&result.QuoteSentAt, &result.ApprovedAt, &result.StartedAt, &result.FinishedAt, &result.DeliveredAt,
-			&result.CreatedAt, &result.UpdatedAt,
-		)
-
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, application.ErrNotFound
-		}
-		return nil, err
+	if err := db.QueryRow(ctx, query, args...).Scan(workOrderDest(&result)...); err != nil {
+		return nil, notFound(err)
 	}
 	return &result, nil
 }
 
+func (r *workOrderRepository) Create(ctx context.Context, wo *domain.WorkOrder) (*domain.WorkOrder, error) {
+	return InsertWorkOrder(ctx, r.db, wo)
+}
+
 func (r *workOrderRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.WorkOrder, error) {
-	query := `
-		SELECT 
-			wo.id, wo.code, wo.title, wo.description, wo.customer_id, wo.vehicle_id, wo.opened_by_user_id, 
-			wo.assigned_technician_id, wo.status, wo.total_estimated_price_cents, wo.received_at, 
-			wo.quote_sent_at, wo.approved_at, wo.started_at, wo.finished_at, wo.delivered_at, 
-			wo.created_at, wo.updated_at,
-			c.id, c.name, c.document,
-			v.id, v.license_plate, v.brand, v.model, v.year,
-			t.id, t.username, t.role
-		FROM work_orders wo
-		JOIN customers c ON wo.customer_id = c.id
-		JOIN vehicles v ON wo.vehicle_id = v.id
-		LEFT JOIN users t ON wo.assigned_technician_id = t.id
-		WHERE wo.id = $1`
+	query := fmt.Sprintf(`SELECT %s, %s FROM work_orders wo %s WHERE wo.id = $1`,
+		workOrderColumns("wo."), workOrderJoinColumns, workOrderJoins)
 
-	var result domain.WorkOrder
-	var customer domain.WorkOrderCustomer
-	var vehicle domain.WorkOrderVehicle
-	var customerID, vehicleID uuid.UUID
-	var technicianID *uuid.UUID
-	var technicianUsername *string
-	var technicianRole *domain.UserRole
-
-	err := r.db.QueryRow(ctx, query, id).
-		Scan(
-			&result.ID, &result.Code, &result.Title, &result.Description, &customerID, &vehicleID, &result.OpenedByUserID,
-			&result.AssignedTechnicianID, &result.Status, &result.TotalEstimatedPriceCents, &result.ReceivedAt,
-			&result.QuoteSentAt, &result.ApprovedAt, &result.StartedAt, &result.FinishedAt, &result.DeliveredAt,
-			&result.CreatedAt, &result.UpdatedAt,
-			&customer.ID, &customer.Name, &customer.Document,
-			&vehicle.ID, &vehicle.LicensePlate, &vehicle.Brand, &vehicle.Model, &vehicle.Year,
-			&technicianID, &technicianUsername, &technicianRole,
-		)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, application.ErrNotFound
-		}
-		return nil, err
+	var j joinedWorkOrder
+	if err := r.db.QueryRow(ctx, query, id).Scan(j.dest()...); err != nil {
+		return nil, notFound(err)
 	}
-
-	result.CustomerID = customerID
-	result.VehicleID = vehicleID
-	result.Customer = &customer
-	result.Vehicle = &vehicle
-	if technicianID != nil && technicianUsername != nil && technicianRole != nil {
-		result.AssignedTechnician = &domain.WorkOrderTechnician{
-			ID: *technicianID, Username: *technicianUsername, Role: *technicianRole,
-		}
-	}
+	result := j.result()
 
 	services, err := r.fetchServicesForWorkOrder(ctx, result.ID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, application.ErrNotFound
-		}
-		return nil, err
+		return nil, notFound(err)
 	}
 	result.Services = services
-
 	return &result, nil
 }
 
 func (r *workOrderRepository) FindByCode(ctx context.Context, code string) (*domain.WorkOrder, error) {
-	query := `
-		SELECT
-			id, code, title, description, customer_id, vehicle_id, opened_by_user_id,
-			assigned_technician_id, status, total_estimated_price_cents, received_at,
-			quote_sent_at, approved_at, started_at, finished_at, delivered_at,
-			created_at, updated_at
-		FROM work_orders WHERE code = $1`
+	query := fmt.Sprintf(`SELECT %s FROM work_orders wo WHERE wo.code = $1`, workOrderColumns("wo."))
 
 	var result domain.WorkOrder
-	err := r.db.QueryRow(ctx, query, code).
-		Scan(
-			&result.ID, &result.Code, &result.Title, &result.Description, &result.CustomerID, &result.VehicleID, &result.OpenedByUserID,
-			&result.AssignedTechnicianID, &result.Status, &result.TotalEstimatedPriceCents, &result.ReceivedAt,
-			&result.QuoteSentAt, &result.ApprovedAt, &result.StartedAt, &result.FinishedAt, &result.DeliveredAt,
-			&result.CreatedAt, &result.UpdatedAt,
-		)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, application.ErrNotFound
-		}
-		return nil, err
+	if err := r.db.QueryRow(ctx, query, code).Scan(workOrderDest(&result)...); err != nil {
+		return nil, notFound(err)
 	}
 	return &result, nil
 }
 
 func (r *workOrderRepository) FindAll(ctx context.Context) ([]domain.WorkOrder, error) {
-	query := `
-		SELECT 
-			id, code, title, description, customer_id, vehicle_id, opened_by_user_id, 
-			assigned_technician_id, status, total_estimated_price_cents, received_at, 
-			quote_sent_at, approved_at, started_at, finished_at, delivered_at, 
-			created_at, updated_at
-		FROM work_orders
-		ORDER BY created_at DESC`
+	query := fmt.Sprintf(`SELECT %s FROM work_orders wo ORDER BY wo.created_at DESC`, workOrderColumns("wo."))
 
 	rows, err := r.db.Query(ctx, query)
 	if err != nil {
@@ -189,56 +180,52 @@ func (r *workOrderRepository) FindAll(ctx context.Context) ([]domain.WorkOrder, 
 	var workOrders []domain.WorkOrder
 	for rows.Next() {
 		var wo domain.WorkOrder
-		if err := rows.Scan(
-			&wo.ID, &wo.Code, &wo.Title, &wo.Description, &wo.CustomerID, &wo.VehicleID, &wo.OpenedByUserID,
-			&wo.AssignedTechnicianID, &wo.Status, &wo.TotalEstimatedPriceCents, &wo.ReceivedAt,
-			&wo.QuoteSentAt, &wo.ApprovedAt, &wo.StartedAt, &wo.FinishedAt, &wo.DeliveredAt,
-			&wo.CreatedAt, &wo.UpdatedAt,
-		); err != nil {
+		if err := rows.Scan(workOrderDest(&wo)...); err != nil {
 			return nil, err
 		}
 		workOrders = append(workOrders, wo)
 	}
-	return workOrders, nil
+	return workOrders, rows.Err()
 }
 
 func (r *workOrderRepository) Update(ctx context.Context, wo *domain.WorkOrder) (*domain.WorkOrder, error) {
-	query := `
-		UPDATE work_orders
-		SET 
-			code = $1, title = $2, description = $3, customer_id = $4, vehicle_id = $5, 
-			opened_by_user_id = $6, assigned_technician_id = $7, status = $8, 
-			total_estimated_price_cents = $9, received_at = $10, quote_sent_at = $11, 
-			approved_at = $12, started_at = $13, finished_at = $14, delivered_at = $15, 
-			updated_at = $16
-		WHERE id = $17
-		RETURNING 
-			id, code, title, description, customer_id, vehicle_id, opened_by_user_id, 
-			assigned_technician_id, status, total_estimated_price_cents, received_at, 
-			quote_sent_at, approved_at, started_at, finished_at, delivered_at, 
-			created_at, updated_at`
+	query := fmt.Sprintf(`
+		UPDATE work_orders wo
+		SET title = $1, description = $2, assigned_technician_id = $3, updated_at = $4
+		WHERE wo.id = $5
+		RETURNING %s`, workOrderColumns("wo."))
 
 	wo.UpdatedAt = time.Now()
 
 	var result domain.WorkOrder
-	err := r.db.QueryRow(ctx, query,
-		wo.Code, wo.Title, wo.Description, wo.CustomerID, wo.VehicleID, wo.OpenedByUserID,
-		wo.AssignedTechnicianID, wo.Status, wo.TotalEstimatedPriceCents, wo.ReceivedAt,
-		wo.QuoteSentAt, wo.ApprovedAt, wo.StartedAt, wo.FinishedAt, wo.DeliveredAt,
-		wo.UpdatedAt, wo.ID).
-		Scan(
-			&result.ID, &result.Code, &result.Title, &result.Description, &result.CustomerID, &result.VehicleID, &result.OpenedByUserID,
-			&result.AssignedTechnicianID, &result.Status, &result.TotalEstimatedPriceCents, &result.ReceivedAt,
-			&result.QuoteSentAt, &result.ApprovedAt, &result.StartedAt, &result.FinishedAt, &result.DeliveredAt,
-			&result.CreatedAt, &result.UpdatedAt,
-		)
+	err := r.db.QueryRow(ctx, query, wo.Title, wo.Description, wo.AssignedTechnicianID, wo.UpdatedAt, wo.ID).
+		Scan(workOrderDest(&result)...)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, application.ErrNotFound
-		}
-		return nil, err
+		return nil, notFound(err)
 	}
 	return &result, nil
+}
+
+func (r *workOrderRepository) FindStatusHistory(ctx context.Context, workOrderID uuid.UUID) ([]domain.WorkOrderStatusChange, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, work_order_id, from_status, to_status, cause, message_id, changed_at
+		FROM work_order_status_history
+		WHERE work_order_id = $1
+		ORDER BY seq`, workOrderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	history := make([]domain.WorkOrderStatusChange, 0)
+	for rows.Next() {
+		var h domain.WorkOrderStatusChange
+		if err := rows.Scan(&h.ID, &h.WorkOrderID, &h.From, &h.To, &h.Cause, &h.MessageID, &h.ChangedAt); err != nil {
+			return nil, err
+		}
+		history = append(history, h)
+	}
+	return history, rows.Err()
 }
 
 func workOrderStatusPriorityCase() string {
@@ -253,49 +240,33 @@ func workOrderStatusPriorityCase() string {
 
 func (r *workOrderRepository) FindAllWithFilters(ctx context.Context, filters application.WorkOrderListFilters) (*application.WorkOrderListResponse, error) {
 	whereConditions := []string{}
-	args := []interface{}{}
-	argIndex := 1
+	args := []any{}
+	add := func(condition string, value any) {
+		args = append(args, value)
+		whereConditions = append(whereConditions, fmt.Sprintf(condition, len(args)))
+	}
 
 	for _, excluded := range domain.WorkOrderListingAlwaysExcludedStatuses {
-		whereConditions = append(whereConditions, fmt.Sprintf("wo.status <> $%d", argIndex))
-		args = append(args, string(excluded))
-		argIndex++
+		add("wo.status <> $%d", string(excluded))
 	}
-
 	if filters.Status != "" {
-		whereConditions = append(whereConditions, fmt.Sprintf("wo.status = $%d", argIndex))
-		args = append(args, filters.Status)
-		argIndex++
+		add("wo.status = $%d", filters.Status)
 	} else {
 		for _, hidden := range domain.WorkOrderListingDefaultHiddenStatuses {
-			whereConditions = append(whereConditions, fmt.Sprintf("wo.status <> $%d", argIndex))
-			args = append(args, string(hidden))
-			argIndex++
+			add("wo.status <> $%d", string(hidden))
 		}
 	}
-
 	if filters.CustomerID != uuid.Nil {
-		whereConditions = append(whereConditions, fmt.Sprintf("wo.customer_id = $%d", argIndex))
-		args = append(args, filters.CustomerID)
-		argIndex++
+		add("wo.customer_id = $%d", filters.CustomerID)
 	}
-
 	if filters.VehicleID != uuid.Nil {
-		whereConditions = append(whereConditions, fmt.Sprintf("wo.vehicle_id = $%d", argIndex))
-		args = append(args, filters.VehicleID)
-		argIndex++
+		add("wo.vehicle_id = $%d", filters.VehicleID)
 	}
-
 	if filters.FromDate != nil {
-		whereConditions = append(whereConditions, fmt.Sprintf("wo.received_at >= $%d", argIndex))
-		args = append(args, filters.FromDate)
-		argIndex++
+		add("wo.received_at >= $%d", filters.FromDate)
 	}
-
 	if filters.ToDate != nil {
-		whereConditions = append(whereConditions, fmt.Sprintf("wo.received_at <= $%d", argIndex))
-		args = append(args, filters.ToDate)
-		argIndex++
+		add("wo.received_at <= $%d", filters.ToDate)
 	}
 
 	whereClause := "1 = 1"
@@ -303,9 +274,8 @@ func (r *workOrderRepository) FindAllWithFilters(ctx context.Context, filters ap
 		whereClause = strings.Join(whereConditions, " AND ")
 	}
 
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM work_orders wo WHERE %s", whereClause)
 	var total int
-	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := r.db.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM work_orders wo WHERE %s", whereClause), args...).Scan(&total); err != nil {
 		return nil, err
 	}
 
@@ -313,22 +283,13 @@ func (r *workOrderRepository) FindAllWithFilters(ctx context.Context, filters ap
 	args = append(args, filters.Limit, offset)
 
 	query := fmt.Sprintf(`
-		SELECT
-			wo.id, wo.code, wo.title, wo.description, wo.customer_id, wo.vehicle_id, wo.opened_by_user_id,
-			wo.assigned_technician_id, wo.status, wo.total_estimated_price_cents, wo.received_at,
-			wo.quote_sent_at, wo.approved_at, wo.started_at, wo.finished_at, wo.delivered_at,
-			wo.created_at, wo.updated_at,
-			c.id, c.name, c.document,
-			v.id, v.license_plate, v.brand, v.model, v.year,
-			t.id, t.username, t.role
-		FROM work_orders wo
-		JOIN customers c ON wo.customer_id = c.id
-		JOIN vehicles v ON wo.vehicle_id = v.id
-		LEFT JOIN users t ON wo.assigned_technician_id = t.id
+		SELECT %s, %s
+		FROM work_orders wo %s
 		WHERE %s
-		ORDER BY %s,
-			wo.received_at ASC
-		LIMIT $%d OFFSET $%d`, whereClause, workOrderStatusPriorityCase(), len(args)-1, len(args))
+		ORDER BY %s, wo.received_at ASC
+		LIMIT $%d OFFSET $%d`,
+		workOrderColumns("wo."), workOrderJoinColumns, workOrderJoins,
+		whereClause, workOrderStatusPriorityCase(), len(args)-1, len(args))
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -338,52 +299,27 @@ func (r *workOrderRepository) FindAllWithFilters(ctx context.Context, filters ap
 
 	var workOrders []domain.WorkOrder
 	for rows.Next() {
-		var wo domain.WorkOrder
-		var customer domain.WorkOrderCustomer
-		var vehicle domain.WorkOrderVehicle
-		var customerID, vehicleID uuid.UUID
-		var technicianID *uuid.UUID
-		var technicianUsername *string
-		var technicianRole *domain.UserRole
-
-		if err := rows.Scan(
-			&wo.ID, &wo.Code, &wo.Title, &wo.Description, &customerID, &vehicleID, &wo.OpenedByUserID,
-			&wo.AssignedTechnicianID, &wo.Status, &wo.TotalEstimatedPriceCents, &wo.ReceivedAt,
-			&wo.QuoteSentAt, &wo.ApprovedAt, &wo.StartedAt, &wo.FinishedAt, &wo.DeliveredAt,
-			&wo.CreatedAt, &wo.UpdatedAt,
-			&customer.ID, &customer.Name, &customer.Document,
-			&vehicle.ID, &vehicle.LicensePlate, &vehicle.Brand, &vehicle.Model, &vehicle.Year,
-			&technicianID, &technicianUsername, &technicianRole,
-		); err != nil {
+		var j joinedWorkOrder
+		if err := rows.Scan(j.dest()...); err != nil {
 			return nil, err
 		}
-
-		wo.Customer = &customer
-		wo.Vehicle = &vehicle
-		if technicianID != nil && technicianUsername != nil && technicianRole != nil {
-			wo.AssignedTechnician = &domain.WorkOrderTechnician{
-				ID: *technicianID, Username: *technicianUsername, Role: *technicianRole,
-			}
-		}
-		wo.CustomerID = customerID
-		wo.VehicleID = vehicleID
-
-		workOrders = append(workOrders, wo)
+		workOrders = append(workOrders, j.result())
 	}
-
-	totalPages := (total + filters.Limit - 1) / filters.Limit
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return &application.WorkOrderListResponse{
 		Data:       workOrders,
 		Total:      total,
 		Page:       filters.Page,
 		Limit:      filters.Limit,
-		TotalPages: totalPages,
+		TotalPages: (total + filters.Limit - 1) / filters.Limit,
 	}, nil
 }
 
 func (r *workOrderRepository) fetchServicesForWorkOrder(ctx context.Context, workOrderID uuid.UUID) ([]domain.WorkOrderService, error) {
-	query := `SELECT id, work_order_id, service_id, service_title_snapshot, service_description_snapshot, service_price_cents_snapshot, service_estimated_time_minutes_snapshot, approval_status, status, started_at, finished_at, created_at, updated_at FROM work_order_services WHERE work_order_id = $1`
+	query := `SELECT id, work_order_id, service_id, service_title_snapshot, service_description_snapshot, service_price_cents_snapshot, service_estimated_time_minutes_snapshot, approval_status, status, started_at, finished_at, created_at, updated_at FROM work_order_services WHERE work_order_id = $1 ORDER BY created_at, id`
 	rows, err := r.db.Query(ctx, query, workOrderID)
 	if err != nil {
 		return nil, err
@@ -401,13 +337,18 @@ func (r *workOrderRepository) fetchServicesForWorkOrder(ctx context.Context, wor
 		); err != nil {
 			return nil, err
 		}
+		services = append(services, svc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-		supplies, err := r.fetchSuppliesForService(ctx, svc.ID)
+	for i := range services {
+		supplies, err := r.fetchSuppliesForService(ctx, services[i].ID)
 		if err != nil {
 			return nil, err
 		}
-		svc.Supplies = supplies
-		services = append(services, svc)
+		services[i].Supplies = supplies
 	}
 	return services, nil
 }
@@ -432,5 +373,5 @@ func (r *workOrderRepository) fetchSuppliesForService(ctx context.Context, servi
 		}
 		supplies = append(supplies, sup)
 	}
-	return supplies, nil
+	return supplies, rows.Err()
 }

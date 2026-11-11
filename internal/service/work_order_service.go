@@ -16,7 +16,7 @@ import (
 
 var (
 	ErrVehicleNotBelongingToCustomer = errors.New("vehicle does not belong to the given customer")
-	ErrInvalidStatusTransition       = errors.New("invalid status transition")
+	ErrInvalidStatusTransition       = domain.ErrInvalidStatusTransition
 )
 
 type WorkOrderService interface {
@@ -30,10 +30,11 @@ type WorkOrderService interface {
 type workOrderService struct {
 	repo        application.WorkOrderRepository
 	vehicleRepo application.VehicleRepository
+	opener      application.WorkOrderOpener
 }
 
-func NewWorkOrderService(repo application.WorkOrderRepository, vehicleRepo application.VehicleRepository) WorkOrderService {
-	return &workOrderService{repo: repo, vehicleRepo: vehicleRepo}
+func NewWorkOrderService(repo application.WorkOrderRepository, vehicleRepo application.VehicleRepository, opener application.WorkOrderOpener) WorkOrderService {
+	return &workOrderService{repo: repo, vehicleRepo: vehicleRepo, opener: opener}
 }
 
 func generateWorkOrderCode() string {
@@ -81,8 +82,7 @@ func (s *workOrderService) Create(ctx context.Context, wo *domain.WorkOrder) (*d
 		wo.ReceivedAt = now
 	}
 
-	created, err := s.repo.Create(ctx, wo)
-	if err != nil {
+	if err := s.opener.Open(ctx, wo, vehicle); err != nil {
 		observability.FromContext(ctx).LogAttrs(ctx, slog.LevelError, "create work order failed",
 			observability.Integration(observability.IntegrationRDS),
 			observability.Err(err))
@@ -92,10 +92,10 @@ func (s *workOrderService) Create(ctx context.Context, wo *domain.WorkOrder) (*d
 
 	observability.FromContext(ctx).LogAttrs(ctx, slog.LevelInfo, "work order created",
 		observability.Event(observability.EventWorkOrderCreated),
-		slog.String(observability.KeyWorkOrderID, created.ID.String()),
-		slog.String(observability.KeyWorkOrderCode, created.Code))
+		slog.String(observability.KeyWorkOrderID, wo.ID.String()),
+		slog.String(observability.KeyWorkOrderCode, wo.Code))
 
-	return s.repo.FindByID(ctx, created.ID)
+	return s.repo.FindByID(ctx, wo.ID)
 }
 
 func (s *workOrderService) GetByID(ctx context.Context, id uuid.UUID) (*domain.WorkOrder, error) {

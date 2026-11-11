@@ -37,7 +37,8 @@ func TestCreate_AutoGeneratesCode(t *testing.T) {
 	// code must be generated when not provided, matching OS-YYYYMMDD-XXXX
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	customerID := uuid.New()
@@ -49,24 +50,43 @@ func TestCreate_AutoGeneratesCode(t *testing.T) {
 	result := savedWO(uuid.New(), customerID, vehicleID, userID)
 
 	vehicleRepo.On("FindByID", ctx, vehicleID).Return(vehicle, nil)
-	woRepo.On("Create", ctx, mock.AnythingOfType("*domain.WorkOrder")).Return(result, nil)
-	woRepo.On("FindByID", ctx, result.ID).Return(result, nil)
+	opener.On("Open", ctx, mock.AnythingOfType("*domain.WorkOrder"), vehicle).Return(nil)
+	woRepo.On("FindByID", ctx, mock.AnythingOfType("uuid.UUID")).Return(result, nil)
 
 	out, err := svc.Create(ctx, input)
 	assert.NoError(t, err)
 	assert.NotNil(t, out)
 
-	// inspect the code that was set on the input before repo.Create was called
-	call := woRepo.Calls[0]
-	submitted := call.Arguments[1].(*domain.WorkOrder)
+	submitted := opener.Calls[0].Arguments[1].(*domain.WorkOrder)
 	assert.Regexp(t, codePattern, submitted.Code)
+	assert.Equal(t, domain.WorkOrderStatusReceived, submitted.Status)
+}
+
+func TestCreate_OpenFails_ReturnsError(t *testing.T) {
+	woRepo := new(mockWorkOrderRepo)
+	vehicleRepo := new(mockVehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
+	ctx := context.Background()
+
+	customerID := uuid.New()
+	vehicleID := uuid.New()
+	vehicle := &domain.Vehicle{ID: vehicleID, CustomerID: customerID}
+	vehicleRepo.On("FindByID", ctx, vehicleID).Return(vehicle, nil)
+	opener.On("Open", ctx, mock.Anything, vehicle).Return(errors.New("db down"))
+
+	out, err := svc.Create(ctx, newWOInput(customerID, vehicleID, uuid.New()))
+	assert.Error(t, err)
+	assert.Nil(t, out)
+	woRepo.AssertNotCalled(t, "FindByID")
 }
 
 func TestCreate_VehicleNotBelongingToCustomer_ReturnsError(t *testing.T) {
 	// must reject when vehicle.CustomerID != workOrder.CustomerID
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	customerID := uuid.New()
@@ -81,14 +101,15 @@ func TestCreate_VehicleNotBelongingToCustomer_ReturnsError(t *testing.T) {
 	out, err := svc.Create(ctx, input)
 	assert.ErrorIs(t, err, ErrVehicleNotBelongingToCustomer)
 	assert.Nil(t, out)
-	woRepo.AssertNotCalled(t, "Create")
+	opener.AssertNotCalled(t, "Open")
 }
 
 func TestCreate_VehicleNotFound_ReturnsError(t *testing.T) {
 	// must propagate error when vehicle does not exist
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	customerID := uuid.New()
@@ -101,13 +122,14 @@ func TestCreate_VehicleNotFound_ReturnsError(t *testing.T) {
 	out, err := svc.Create(ctx, input)
 	assert.Error(t, err)
 	assert.Nil(t, out)
-	woRepo.AssertNotCalled(t, "Create")
+	opener.AssertNotCalled(t, "Open")
 }
 
 func TestCreate_MissingTitle_ReturnsError(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	input := &domain.WorkOrder{
@@ -124,7 +146,8 @@ func TestCreate_MissingTitle_ReturnsError(t *testing.T) {
 func TestCreate_MissingCustomerID_ReturnsError(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	input := &domain.WorkOrder{
@@ -141,7 +164,8 @@ func TestCreate_MissingCustomerID_ReturnsError(t *testing.T) {
 func TestWorkOrderGetByID_Success(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 	id := uuid.New()
 	wo := makeWO(id, domain.WorkOrderStatusReceived)
@@ -156,7 +180,8 @@ func TestWorkOrderGetByID_Success(t *testing.T) {
 func TestWorkOrderGetByID_NotFound(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 	id := uuid.New()
 
@@ -170,7 +195,8 @@ func TestWorkOrderGetByID_NotFound(t *testing.T) {
 func TestWorkOrderGetAll_Success(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 	id := uuid.New()
 
@@ -184,7 +210,8 @@ func TestWorkOrderGetAll_Success(t *testing.T) {
 func TestWorkOrderUpdate_Success(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 	id := uuid.New()
 
@@ -205,7 +232,8 @@ func TestWorkOrderUpdate_Success(t *testing.T) {
 func TestWorkOrderUpdate_NotFound(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 	id := uuid.New()
 
@@ -219,7 +247,8 @@ func TestWorkOrderUpdate_NotFound(t *testing.T) {
 func TestCreate_MissingOpenedByUserID_ReturnsError(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	input := &domain.WorkOrder{
@@ -236,7 +265,8 @@ func TestCreate_MissingOpenedByUserID_ReturnsError(t *testing.T) {
 func TestCreate_VehicleNotBelongingToCustomer(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	customerID := uuid.New()
@@ -260,7 +290,8 @@ func TestWorkOrderUpdate_AllFields(t *testing.T) {
 	// cobre todos os branches opcionais do Update
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 	id := uuid.New()
 
@@ -303,7 +334,8 @@ func TestWorkOrderUpdate_AllFields(t *testing.T) {
 func TestGetAllWithFilters_DefaultsPage(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	resp := &application.WorkOrderListResponse{
@@ -322,7 +354,8 @@ func TestGetAllWithFilters_DefaultsPage(t *testing.T) {
 func TestGetAllWithFilters_LimitTooHigh(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	resp := &application.WorkOrderListResponse{
@@ -341,7 +374,8 @@ func TestGetAllWithFilters_LimitTooHigh(t *testing.T) {
 func TestGetAllWithFilters_ValidFilters(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	resp := &application.WorkOrderListResponse{
@@ -360,7 +394,8 @@ func TestGetAllWithFilters_ValidFilters(t *testing.T) {
 func TestGetAllWithFilters_Error(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	woRepo.On("FindAllWithFilters", ctx, mock.Anything).Return(nil, errors.New("db error"))
@@ -373,7 +408,8 @@ func TestGetAllWithFilters_Error(t *testing.T) {
 func TestGetAllWithFilters_NoStatusFilter_PassesThroughToRepo(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	resp := &application.WorkOrderListResponse{
@@ -392,7 +428,8 @@ func TestGetAllWithFilters_NoStatusFilter_PassesThroughToRepo(t *testing.T) {
 func TestCreate_MissingVehicleID_ReturnsError(t *testing.T) {
 	woRepo := new(mockWorkOrderRepo)
 	vehicleRepo := new(mockVehicleRepo)
-	svc := NewWorkOrderService(woRepo, vehicleRepo)
+	opener := new(mockWorkOrderOpener)
+	svc := NewWorkOrderService(woRepo, vehicleRepo, opener)
 	ctx := context.Background()
 
 	input := &domain.WorkOrder{

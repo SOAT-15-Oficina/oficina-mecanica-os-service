@@ -62,6 +62,22 @@ func (m *mockWorkOrderRepo) Update(ctx context.Context, wo *domain.WorkOrder) (*
 	return args.Get(0).(*domain.WorkOrder), args.Error(1)
 }
 
+func (m *mockWorkOrderRepo) FindStatusHistory(ctx context.Context, workOrderID uuid.UUID) ([]domain.WorkOrderStatusChange, error) {
+	args := m.Called(ctx, workOrderID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.WorkOrderStatusChange), args.Error(1)
+}
+
+type mockWorkOrderOpener struct {
+	mock.Mock
+}
+
+func (m *mockWorkOrderOpener) Open(ctx context.Context, wo *domain.WorkOrder, vehicle *domain.Vehicle) error {
+	return m.Called(ctx, wo, vehicle).Error(0)
+}
+
 type mockWorkOrderServiceRepo struct {
 	mock.Mock
 }

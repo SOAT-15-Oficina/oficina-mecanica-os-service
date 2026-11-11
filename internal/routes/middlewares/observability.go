@@ -45,7 +45,7 @@ func Observability() fiber.Handler {
 		)
 
 		logger := slog.Default().With(slog.String(observability.KeyRequestID, requestID))
-		c.SetContext(observability.WithLogger(ctx, logger))
+		c.SetContext(observability.WithRequestID(observability.WithLogger(ctx, logger), requestID))
 
 		defer func() {
 			if recovered := recover(); recovered != nil {
