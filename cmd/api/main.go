@@ -40,7 +40,10 @@ func runMigrations() {
 	}
 	defer db.Close()
 
-	database.RunMigrations(db)
+	if err := database.RunMigrations(db); err != nil {
+		shutdownApp(err, "failed to run migrations", observability.Integration(observability.IntegrationRDS))
+	}
+	slog.Info("migrations applied successfully")
 }
 
 func runServer() {
