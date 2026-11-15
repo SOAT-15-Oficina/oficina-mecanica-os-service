@@ -4,8 +4,8 @@ import (
 	"errors"
 	"regexp"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/service"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/service"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 )
@@ -92,7 +92,7 @@ func (h *CustomerHandler) Update(c fiber.Ctx) error {
 }
 
 func (h *CustomerHandler) handleServiceError(c fiber.Ctx, err error) error {
-	if handled, resp := dbErrResponse(c, err, "customer not found"); handled {
+	if handled, resp := dbErrResponse(c, err, "customer not found."); handled {
 		return resp
 	}
 	switch {

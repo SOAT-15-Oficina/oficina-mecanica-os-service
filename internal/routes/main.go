@@ -4,13 +4,13 @@ import (
 	"context"
 	"time"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/config"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/handler"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/repository"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/routes/middlewares"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/service"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/packages/email"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/config"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/handler"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/repository"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/routes/middlewares"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/saga"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/service"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/packages/email"
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -19,7 +19,21 @@ type databasePinger interface {
 	Ping(context.Context) error
 }
 
-func RegisterRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, emailProv email.Provider) {
+func NewOrchestrator(db *pgxpool.Pool, cfg *config.Config, emailProv email.Provider) *saga.Orchestrator {
+	notifier := service.NewWorkOrderStatusNotifier(repository.NewCustomerRepository(db), email.NewWorkOrderNotificationSender(emailProv))
+	return saga.New(db, saga.Config{
+		ExecutionInbox:  cfg.Messaging.ExecutionInboxURL,
+		BillingInbox:    cfg.Messaging.BillingInboxURL,
+		DefaultBranch:   cfg.Saga.DefaultBranch,
+		CommandTimeout:  cfg.Saga.CommandTimeout,
+		ApprovalTimeout: cfg.Saga.ApprovalTimeout,
+		PaymentTimeout:  cfg.Saga.PaymentTimeout,
+		MaxAttempts:     cfg.Saga.MaxAttempts,
+		Tick:            cfg.Saga.Tick,
+	}, notifier)
+}
+
+func RegisterRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, orchestrator *saga.Orchestrator) {
 	app.Use(middlewares.Observability())
 
 	if db == nil {
@@ -30,12 +44,12 @@ func RegisterRoutes(app *fiber.App, db *pgxpool.Pool, cfg *config.Config, emailP
 
 	registerSwagger(app)
 	registerUsers(app, db, cfg.JWT.SecretKey)
+	registerInternal(app, db, internalToken(cfg))
 	registerCustomer(app, db, cfg.JWT.SecretKey)
 	registerVehicle(app, db, cfg.JWT.SecretKey)
 	registerSupply(app, db, cfg.JWT.SecretKey)
-	registerWorkOrderServicePublic(app, db, emailProv, cfg.Server.BaseURL)
 	registerPublicWorkOrder(app, db)
-	registerWorkOrder(app, db, cfg.JWT.SecretKey, emailProv, cfg.Server.BaseURL)
+	registerWorkOrder(app, db, cfg.JWT.SecretKey, orchestrator)
 	registerWorkshopService(app, db, cfg.JWT.SecretKey)
 }
 
@@ -59,9 +73,6 @@ func registerHealthRoutes(app *fiber.App, db databasePinger) {
 	})
 }
 
-// POST /auth/register e POST /auth/login sao servidos pela Lambda no
-// oficina-mecanica-serverless, roteados pelo API Gateway. O monolito apenas
-// valida o token emitido la e mantem a manutencao administrativa de usuarios.
 func registerUsers(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string) {
 	userRepo := repository.NewUserRepository(db)
 	userSvc := service.NewUserService(userRepo)
@@ -72,6 +83,21 @@ func registerUsers(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string) {
 	users.Get("/:id", userHandler.GetByID)
 	users.Put("/:id", userHandler.Update)
 	users.Delete("/:id", userHandler.Delete)
+}
+
+func internalToken(cfg *config.Config) string {
+	if cfg.Internal == nil {
+		return ""
+	}
+	return cfg.Internal.ServiceToken
+}
+
+func registerInternal(app *fiber.App, db *pgxpool.Pool, serviceToken string) {
+	internalHandler := handler.NewInternalHandler(service.NewCredentialService(repository.NewUserRepository(db)))
+
+	group := app.Group("/internal", middlewares.ServiceToken(serviceToken))
+	group.Post("/credentials/verify", internalHandler.VerifyCredentials)
+	group.Post("/users", internalHandler.CreateUser)
 }
 
 func registerCustomer(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string) {
@@ -130,34 +156,30 @@ func registerSupply(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string) {
 	group.Delete("/:id", supplyHandler.Delete)
 }
 
-func registerWorkOrder(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string, emailProv email.Provider, baseURL string) {
+func registerWorkOrder(app *fiber.App, db *pgxpool.Pool, jwtSecretKey string, orchestrator *saga.Orchestrator) {
 	workOrderRepo := repository.NewWorkOrderRepository(db)
 	wosRepo := repository.NewWorkOrderServiceRepository(db)
-	customerRepo := repository.NewCustomerRepository(db)
 	vehicleRepo := repository.NewVehicleRepository(db)
 	wsRepo := repository.NewWorkshopServiceRepository(db)
 	supplyRepo := repository.NewSupplyRepository(db)
-	var budgetNotifier application.BudgetNotificationSender
-	if emailProv != nil {
-		budgetNotifier = email.NewWorkOrderNotificationSender(emailProv)
-	}
-	budgetSvc := service.NewBudgetService(workOrderRepo, wosRepo, customerRepo, budgetNotifier, baseURL)
-	statusSvc := service.NewWorkOrderStatusServiceWithNotifications(workOrderRepo, wosRepo, customerRepo, emailProv, baseURL)
-	workOrderSvc := service.NewWorkOrderService(workOrderRepo, vehicleRepo)
-	creationSvc := service.NewWorkOrderCreationService(workOrderRepo, wosRepo, wsRepo, supplyRepo, statusSvc, service.WithBudgetRefresh(budgetSvc))
+	workOrderSvc := service.NewWorkOrderService(workOrderRepo, vehicleRepo, orchestrator)
+	creationSvc := service.NewWorkOrderCreationService(workOrderRepo, wosRepo, wsRepo, supplyRepo)
 	userRepo := repository.NewUserRepository(db)
 	userSvc := service.NewUserService(userRepo)
-	workOrderHandler := handler.NewWorkOrderHandler(workOrderSvc, creationSvc, statusSvc, userSvc)
+	workOrderHandler := handler.NewWorkOrderHandler(workOrderSvc, creationSvc, userSvc)
+	lifecycleHandler := handler.NewWorkOrderLifecycleHandler(workOrderSvc, orchestrator)
 
 	group := app.Group("/work-orders", middlewares.Auth(jwtSecretKey), middlewares.RequireRoles(middlewares.RoleAdmin, middlewares.RoleEmployee))
 	group.Post("/", workOrderHandler.Create)
 	group.Get("/", workOrderHandler.GetAll)
 	group.Get("/:id", workOrderHandler.GetByID)
 	group.Put("/:id", workOrderHandler.Update)
+	group.Post("/:id/deliver", lifecycleHandler.Deliver)
+	group.Post("/:id/cancel", lifecycleHandler.Cancel)
+	group.Get("/:id/history", lifecycleHandler.History)
+	group.Get("/:id/saga", lifecycleHandler.Saga)
 	group.Post("/:id/services", workOrderHandler.AddServices)
 	group.Delete("/:id/services/:wosId", workOrderHandler.RemoveService)
-	group.Put("/:id/services/:wosId/start", workOrderHandler.StartService)
-	group.Put("/:id/services/:wosId/finalize", workOrderHandler.FinalizeService)
 	group.Post("/:id/services/:wosId/supplies", workOrderHandler.AddSupplies)
 	group.Delete("/:id/services/:wosId/supplies/:supplyId", workOrderHandler.RemoveSupplyFromService)
 }
@@ -171,21 +193,4 @@ func registerPublicWorkOrder(app *fiber.App, db *pgxpool.Pool) {
 
 	public := app.Group("/public/work-orders")
 	public.Get("/:code", publicHandler.GetByCode)
-}
-
-func registerWorkOrderServicePublic(app *fiber.App, db *pgxpool.Pool, emailProv email.Provider, baseURL string) {
-	wosRepo := repository.NewWorkOrderServiceRepository(db)
-	woRepo := repository.NewWorkOrderRepository(db)
-	customerRepo := repository.NewCustomerRepository(db)
-	notificationSender := email.NewWorkOrderNotificationSender(emailProv)
-	statusSvc := service.NewWorkOrderStatusServiceWithNotifications(woRepo, wosRepo, customerRepo, emailProv, baseURL)
-	itemSvc := service.NewWorkOrderItemService(wosRepo, woRepo, statusSvc,
-		service.WithPurchaseAlert(notificationSender, "compras@oficina.com"))
-	wosHandler := handler.NewWorkOrderServiceHandler(itemSvc)
-
-	approval := app.Group("/public/approvals")
-	approval.Get("/services/:workOrderServiceId/approve", wosHandler.Approve)
-	approval.Get("/services/:workOrderServiceId/reject", wosHandler.Reject)
-	approval.Get("/work-orders/:workOrderId/approve-all", wosHandler.ApproveAll)
-	approval.Get("/work-orders/:workOrderId/reject-all", wosHandler.RejectAll)
 }

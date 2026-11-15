@@ -21,13 +21,13 @@ func decodeLine(t *testing.T, buf *bytes.Buffer) map[string]any {
 
 func TestNew_EmitsFixedFieldsAsJSON(t *testing.T) {
 	t.Setenv("DD_ENV", "prod")
-	t.Setenv("DD_SERVICE", "monolith")
+	t.Setenv("DD_SERVICE", "os-service")
 
 	var buf bytes.Buffer
 	New(&buf).Info("hello")
 
 	line := decodeLine(t, &buf)
-	assert.Equal(t, "monolith", line[KeyService])
+	assert.Equal(t, "os-service", line[KeyService])
 	assert.Equal(t, "prod", line[KeyEnv])
 	assert.Equal(t, Version(), line[KeyVersion])
 	assert.Equal(t, "hello", line["msg"])

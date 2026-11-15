@@ -1,6 +1,6 @@
 package port
 
-import "github.com/SOAT-15-Oficina/oficina-mecanica-monolith/packages/email"
+import "github.com/SOAT-15-Oficina/oficina-mecanica-os-service/packages/email"
 
 // EmailSender is the application outbound port for email delivery.
 // Implemented by packages/email (MailHog in development).

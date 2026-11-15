@@ -8,13 +8,16 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/observability"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/observability"
 	"github.com/google/uuid"
 )
 
-var ErrVehicleNotBelongingToCustomer = errors.New("vehicle does not belong to the given customer")
+var (
+	ErrVehicleNotBelongingToCustomer = errors.New("vehicle does not belong to the given customer")
+	ErrInvalidStatusTransition       = domain.ErrInvalidStatusTransition
+)
 
 type WorkOrderService interface {
 	Create(ctx context.Context, workOrder *domain.WorkOrder) (*domain.WorkOrder, error)
@@ -22,15 +25,17 @@ type WorkOrderService interface {
 	GetAll(ctx context.Context) ([]domain.WorkOrder, error)
 	GetAllWithFilters(ctx context.Context, filters application.WorkOrderListFilters) (*application.WorkOrderListResponse, error)
 	Update(ctx context.Context, workOrder *domain.WorkOrder) (*domain.WorkOrder, error)
+	History(ctx context.Context, id uuid.UUID) ([]domain.WorkOrderStatusChange, error)
 }
 
 type workOrderService struct {
 	repo        application.WorkOrderRepository
 	vehicleRepo application.VehicleRepository
+	opener      application.WorkOrderOpener
 }
 
-func NewWorkOrderService(repo application.WorkOrderRepository, vehicleRepo application.VehicleRepository) WorkOrderService {
-	return &workOrderService{repo: repo, vehicleRepo: vehicleRepo}
+func NewWorkOrderService(repo application.WorkOrderRepository, vehicleRepo application.VehicleRepository, opener application.WorkOrderOpener) WorkOrderService {
+	return &workOrderService{repo: repo, vehicleRepo: vehicleRepo, opener: opener}
 }
 
 func generateWorkOrderCode() string {
@@ -78,8 +83,7 @@ func (s *workOrderService) Create(ctx context.Context, wo *domain.WorkOrder) (*d
 		wo.ReceivedAt = now
 	}
 
-	created, err := s.repo.Create(ctx, wo)
-	if err != nil {
+	if err := s.opener.Open(ctx, wo, vehicle); err != nil {
 		observability.FromContext(ctx).LogAttrs(ctx, slog.LevelError, "create work order failed",
 			observability.Integration(observability.IntegrationRDS),
 			observability.Err(err))
@@ -89,10 +93,10 @@ func (s *workOrderService) Create(ctx context.Context, wo *domain.WorkOrder) (*d
 
 	observability.FromContext(ctx).LogAttrs(ctx, slog.LevelInfo, "work order created",
 		observability.Event(observability.EventWorkOrderCreated),
-		slog.String(observability.KeyWorkOrderID, created.ID.String()),
-		slog.String(observability.KeyWorkOrderCode, created.Code))
+		slog.String(observability.KeyWorkOrderID, wo.ID.String()),
+		slog.String(observability.KeyWorkOrderCode, wo.Code))
 
-	return s.repo.FindByID(ctx, created.ID)
+	return s.repo.FindByID(ctx, wo.ID)
 }
 
 func (s *workOrderService) GetByID(ctx context.Context, id uuid.UUID) (*domain.WorkOrder, error) {
@@ -167,4 +171,11 @@ func (s *workOrderService) GetAllWithFilters(ctx context.Context, filters applic
 	}
 
 	return s.repo.FindAllWithFilters(ctx, filters)
+}
+
+func (s *workOrderService) History(ctx context.Context, id uuid.UUID) ([]domain.WorkOrderStatusChange, error) {
+	if _, err := s.repo.FindByID(ctx, id); err != nil {
+		return nil, err
+	}
+	return s.repo.FindStatusHistory(ctx, id)
 }

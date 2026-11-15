@@ -1,19 +1,14 @@
 package routes
 
 import (
-	"os"
-
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/docs"
 	"github.com/gofiber/fiber/v3"
 )
 
 func registerSwagger(app *fiber.App) {
 	app.Get("/docs/swagger.yaml", func(c fiber.Ctx) error {
-		data, err := os.ReadFile("docs/swagger.yaml")
-		if err != nil {
-			return c.Status(fiber.StatusNotFound).SendString("swagger.yaml not found")
-		}
 		c.Set("Content-Type", "text/yaml")
-		return c.Send(data)
+		return c.Send(docs.Swagger)
 	})
 
 	app.Get("/swagger", func(c fiber.Ctx) error {

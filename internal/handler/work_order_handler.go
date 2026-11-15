@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/auth"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/service"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/auth"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/service"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 )
@@ -16,12 +16,11 @@ import (
 type WorkOrderHandler struct {
 	svc         service.WorkOrderService
 	creationSvc service.WorkOrderCreationService
-	statusSvc   service.WorkOrderStatusService
 	userSvc     service.UserService
 }
 
-func NewWorkOrderHandler(svc service.WorkOrderService, creationSvc service.WorkOrderCreationService, statusSvc service.WorkOrderStatusService, userSvc service.UserService) *WorkOrderHandler {
-	return &WorkOrderHandler{svc: svc, creationSvc: creationSvc, statusSvc: statusSvc, userSvc: userSvc}
+func NewWorkOrderHandler(svc service.WorkOrderService, creationSvc service.WorkOrderCreationService, userSvc service.UserService) *WorkOrderHandler {
+	return &WorkOrderHandler{svc: svc, creationSvc: creationSvc, userSvc: userSvc}
 }
 
 type createWorkOrderRequest struct {
@@ -207,16 +206,7 @@ func (h *WorkOrderHandler) Update(c fiber.Ctx) error {
 	}
 
 	if req.Status != "" {
-		if !domain.IsValidWorkOrderStatus(req.Status) {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid status"})
-		}
-		_, err := h.statusSvc.TransitionTo(c.Context(), id, req.Status)
-		if err != nil {
-			if handled, resp := mapErrorResponse(c, err, "work order not found"); handled {
-				return resp
-			}
-			return internalServerError(c)
-		}
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "status is driven by the saga; use /deliver or /cancel"})
 	}
 
 	workOrder := domain.WorkOrder{
@@ -225,8 +215,6 @@ func (h *WorkOrderHandler) Update(c fiber.Ctx) error {
 		Description:          req.Description,
 		AssignedTechnicianID: req.AssignedTechnicianID,
 	}
-
-	workOrder.Status = ""
 
 	result, err := h.svc.Update(c.Context(), &workOrder)
 	if err != nil {
@@ -347,54 +335,6 @@ func (h *WorkOrderHandler) AddSupplies(c fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(result)
-}
-
-func (h *WorkOrderHandler) StartService(c fiber.Ctx) error {
-	id, err := uuid.Parse(c.Params("id"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid work order id"})
-	}
-	wosID, err := uuid.Parse(c.Params("wosId"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid work order service id"})
-	}
-	if err := h.creationSvc.StartService(c.Context(), id, wosID); err != nil {
-		if errors.Is(err, service.ErrWorkOrderServiceOwnership) ||
-			errors.Is(err, service.ErrWorkOrderNotInProgress) ||
-			errors.Is(err, service.ErrServiceNotPending) ||
-			errors.Is(err, service.ErrServiceNotApproved) ||
-			errors.Is(err, service.ErrInsufficientStock) {
-			return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{"error": err.Error()})
-		}
-		if handled, resp := mapErrorResponse(c, err, "resource not found"); handled {
-			return resp
-		}
-		return internalServerError(c)
-	}
-	return c.JSON(fiber.Map{"message": "Servico iniciado com sucesso"})
-}
-
-func (h *WorkOrderHandler) FinalizeService(c fiber.Ctx) error {
-	id, err := uuid.Parse(c.Params("id"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid work order id"})
-	}
-	wosID, err := uuid.Parse(c.Params("wosId"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid work order service id"})
-	}
-	if err := h.creationSvc.FinalizeService(c.Context(), id, wosID); err != nil {
-		if errors.Is(err, service.ErrWorkOrderServiceOwnership) ||
-			errors.Is(err, service.ErrWorkOrderNotInProgress) ||
-			errors.Is(err, service.ErrServiceNotInProgress) {
-			return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{"error": err.Error()})
-		}
-		if handled, resp := mapErrorResponse(c, err, "resource not found"); handled {
-			return resp
-		}
-		return internalServerError(c)
-	}
-	return c.JSON(fiber.Map{"message": "Servico finalizado com sucesso"})
 }
 
 func (h *WorkOrderHandler) RemoveSupplyFromService(c fiber.Ctx) error {

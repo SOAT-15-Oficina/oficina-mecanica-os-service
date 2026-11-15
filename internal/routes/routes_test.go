@@ -3,11 +3,13 @@ package routes
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/config"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/docs"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/config"
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,12 +79,15 @@ func TestSwagger(t *testing.T) {
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 }
 
-func TestSwaggerYAML_NotFound(t *testing.T) {
+func TestSwaggerYAML_IsEmbedded(t *testing.T) {
 	app := fiber.New()
 	registerSwagger(app)
 
 	req := httptest.NewRequest(http.MethodGet, "/docs/swagger.yaml", nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)
-	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, docs.Swagger, body)
 }

@@ -3,14 +3,11 @@ package service
 import (
 	"context"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
 	"github.com/google/uuid"
 )
 
-// Cadastro e emissao de credencial vivem no oficina-mecanica-serverless. Aqui
-// restam a leitura e a manutencao administrativa de usuarios, que o dominio de
-// ordens de servico consome via GetByUsername.
 type UserService interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
 	GetByUsername(ctx context.Context, username string) (*domain.User, error)

@@ -3,8 +3,8 @@ package handler
 import (
 	"errors"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/service"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/service"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -29,6 +29,10 @@ func mapErrorResponse(c fiber.Ctx, err error, notFoundMsg string) (bool, error) 
 
 	if errors.Is(err, service.ErrVehicleNotBelongingToCustomer) {
 		return true, c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	if errors.Is(err, application.ErrSagaNotCancelable) {
+		return true, c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	if errors.Is(err, application.ErrNotFound) {

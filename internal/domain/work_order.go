@@ -13,6 +13,7 @@ const (
 	WorkOrderStatusReceived        WorkOrderStatus = "RECEBIDA"
 	WorkOrderStatusInDiagnosis     WorkOrderStatus = "EM_DIAGNOSTICO"
 	WorkOrderStatusWaitingApproval WorkOrderStatus = "AGUARDANDO_APROVACAO"
+	WorkOrderStatusWaitingPayment  WorkOrderStatus = "AGUARDANDO_PAGAMENTO"
 	WorkOrderStatusApproved        WorkOrderStatus = "APROVADO"
 	WorkOrderStatusInProgress      WorkOrderStatus = "EM_EXECUCAO"
 	WorkOrderStatusFinished        WorkOrderStatus = "FINALIZADA"
@@ -30,7 +31,10 @@ type WorkOrder struct {
 	OpenedByUserID           uuid.UUID            `json:"opened_by_user_id"`
 	AssignedTechnicianID     *uuid.UUID           `json:"assigned_technician_id,omitempty"`
 	Status                   WorkOrderStatus      `json:"status"`
+	Branch                   string               `json:"branch"`
 	TotalEstimatedPriceCents int                  `json:"total_estimated_price_cents"`
+	ApprovedTotalCents       *int                 `json:"approved_total_cents,omitempty"`
+	PaymentURL               *string              `json:"payment_url,omitempty"`
 	ReceivedAt               time.Time            `json:"received_at"`
 	QuoteSentAt              *time.Time           `json:"quote_sent_at,omitempty"`
 	ApprovedAt               *time.Time           `json:"approved_at,omitempty"`
@@ -70,6 +74,7 @@ func IsValidWorkOrderStatus(status WorkOrderStatus) bool {
 	case WorkOrderStatusReceived,
 		WorkOrderStatusInDiagnosis,
 		WorkOrderStatusWaitingApproval,
+		WorkOrderStatusWaitingPayment,
 		WorkOrderStatusApproved,
 		WorkOrderStatusInProgress,
 		WorkOrderStatusFinished,
@@ -134,6 +139,8 @@ func WorkOrderStatusLabel(status WorkOrderStatus) string {
 		return "Em diagnóstico"
 	case WorkOrderStatusWaitingApproval:
 		return "Aguardando aprovação"
+	case WorkOrderStatusWaitingPayment:
+		return "Aguardando pagamento"
 	case WorkOrderStatusApproved:
 		return "Aprovada"
 	case WorkOrderStatusInProgress:

@@ -3,7 +3,7 @@ package middlewares
 import (
 	"strings"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/auth"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/auth"
 	"github.com/gofiber/fiber/v3"
 )
 
