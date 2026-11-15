@@ -35,7 +35,7 @@ data "aws_iam_policy_document" "inbox" {
     condition {
       test     = "ArnEquals"
       variable = "aws:SourceArn"
-      values   = local.event_topic_arns
+      values   = values(local.event_topic_arns)
     }
   }
 }
@@ -46,7 +46,7 @@ resource "aws_sqs_queue_policy" "inbox" {
 }
 
 resource "aws_sns_topic_subscription" "events" {
-  for_each = toset(local.event_topic_arns)
+  for_each = local.event_topic_arns
 
   topic_arn            = each.value
   protocol             = "sqs"
