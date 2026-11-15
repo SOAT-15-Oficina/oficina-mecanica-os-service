@@ -10,8 +10,8 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/auth"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/observability"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/auth"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/observability"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 )
@@ -45,7 +45,7 @@ func Observability() fiber.Handler {
 		)
 
 		logger := slog.Default().With(slog.String(observability.KeyRequestID, requestID))
-		c.SetContext(observability.WithLogger(ctx, logger))
+		c.SetContext(observability.WithRequestID(observability.WithLogger(ctx, logger), requestID))
 
 		defer func() {
 			if recovered := recover(); recovered != nil {

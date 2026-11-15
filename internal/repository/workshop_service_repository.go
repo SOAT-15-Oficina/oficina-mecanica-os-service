@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -266,17 +266,4 @@ func (r *workshopServiceRepository) GetAvgExecutionTime(ctx context.Context, fil
 	}
 
 	return results, nil
-}
-
-func (r *workshopServiceRepository) SubtractSuppliesFromStock(ctx context.Context, serviceID uuid.UUID) error {
-	query := `
-		UPDATE supplies s
-		SET stock_quantity = s.stock_quantity - woss.supply_quantity
-		FROM work_order_service_supplies woss
-		JOIN work_order_services wos ON wos.id = woss.work_order_service_id
-		WHERE woss.supply_id = s.id
-		  AND wos.service_id = $1`
-
-	_, err := r.db.Exec(ctx, query, serviceID)
-	return err
 }

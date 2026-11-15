@@ -1,0 +1,8 @@
+.git
+.github
+coverage.out
+.scannerwork
+infra
+k8s
+local
+.env

@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/service"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/service"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 )

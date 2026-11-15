@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -73,52 +73,6 @@ func (r *workOrderServiceRepository) FindByWorkOrderID(ctx context.Context, work
 		services = append(services, wos)
 	}
 	return services, nil
-}
-
-func (r *workOrderServiceRepository) UpdateApprovalStatus(ctx context.Context, id uuid.UUID, status domain.WorkOrderServiceApprovalStatus) error {
-	query := `UPDATE work_order_services SET approval_status = $1, updated_at = $2 WHERE id = $3`
-	_, err := r.db.Exec(ctx, query, status, time.Now(), id)
-	return err
-}
-
-func (r *workOrderServiceRepository) UpdateApprovalStatusByWorkOrderID(ctx context.Context, workOrderID uuid.UUID, status domain.WorkOrderServiceApprovalStatus) error {
-	query := `UPDATE work_order_services SET approval_status = $1, updated_at = $2 WHERE work_order_id = $3 AND approval_status = $4`
-	_, err := r.db.Exec(ctx, query, status, time.Now(), workOrderID, domain.WorkOrderServiceApprovalPending)
-	return err
-}
-
-func (r *workOrderServiceRepository) CalculateTotalForWorkOrder(ctx context.Context, workOrderID uuid.UUID) (int, error) {
-	query := `
-		SELECT COALESCE(SUM(wos.service_price_cents_snapshot), 0) +
-			COALESCE((
-				SELECT SUM(woss.supply_price_cents_snapshot * woss.supply_quantity)
-				FROM work_order_service_supplies woss
-				JOIN work_order_services wos2 ON wos2.id = woss.work_order_service_id
-				WHERE wos2.work_order_id = $1
-			), 0)
-		FROM work_order_services wos
-		WHERE wos.work_order_id = $1`
-
-	var total int
-	err := r.db.QueryRow(ctx, query, workOrderID).Scan(&total)
-	return total, err
-}
-
-func (r *workOrderServiceRepository) CalculateApprovedTotalForWorkOrder(ctx context.Context, workOrderID uuid.UUID) (int, error) {
-	query := `
-		SELECT COALESCE(SUM(wos.service_price_cents_snapshot), 0) +
-			COALESCE((
-				SELECT SUM(woss.supply_price_cents_snapshot * woss.supply_quantity)
-				FROM work_order_service_supplies woss
-				JOIN work_order_services wos2 ON wos2.id = woss.work_order_service_id
-				WHERE wos2.work_order_id = $1 AND wos2.approval_status = 'APROVADO'
-			), 0)
-		FROM work_order_services wos
-		WHERE wos.work_order_id = $1 AND wos.approval_status = 'APROVADO'`
-
-	var total int
-	err := r.db.QueryRow(ctx, query, workOrderID).Scan(&total)
-	return total, err
 }
 
 func (r *workOrderServiceRepository) DeleteSuppliesByWorkOrderServiceID(ctx context.Context, workOrderServiceID uuid.UUID) error {
@@ -212,101 +166,6 @@ func (r *workOrderServiceRepository) CreateBatch(ctx context.Context, items []*d
 	return results, nil
 }
 
-func (r *workOrderServiceRepository) CreateSupply(ctx context.Context, supply *domain.WorkOrderServiceSupply) (*domain.WorkOrderServiceSupply, error) {
-	items, err := r.CreateSupplyBatch(ctx, []*domain.WorkOrderServiceSupply{supply})
-	if err != nil {
-		return nil, err
-	}
-	return items[0], nil
-}
-
-func (r *workOrderServiceRepository) MarkAsStartedByWorkOrderID(ctx context.Context, workOrderID uuid.UUID, startedAt time.Time) error {
-	query := `
-		UPDATE work_order_services
-		SET status = $1, started_at = $2, updated_at = $2
-		WHERE work_order_id = $3
-		  AND approval_status = $4
-		  AND started_at IS NULL`
-	_, err := r.db.Exec(ctx, query,
-		domain.WorkOrderServiceStatusInProgress, startedAt,
-		workOrderID, domain.WorkOrderServiceApprovalApproved,
-	)
-	return err
-}
-
-func (r *workOrderServiceRepository) MarkAsFinishedByWorkOrderID(ctx context.Context, workOrderID uuid.UUID, finishedAt time.Time) error {
-	query := `
-		UPDATE work_order_services
-		SET status = $1, finished_at = $2, updated_at = $2
-		WHERE work_order_id = $3
-		  AND status = $4
-		  AND finished_at IS NULL`
-	_, err := r.db.Exec(ctx, query,
-		domain.WorkOrderServiceStatusFinished, finishedAt,
-		workOrderID, domain.WorkOrderServiceStatusInProgress,
-	)
-	return err
-}
-
-func (r *workOrderServiceRepository) MarkServiceAsStarted(ctx context.Context, id uuid.UUID, startedAt time.Time) error {
-	query := `
-		UPDATE work_order_services
-		SET status = $1, started_at = $2, updated_at = $2
-		WHERE id = $3
-		  AND status = $4
-		  AND started_at IS NULL`
-	_, err := r.db.Exec(ctx, query,
-		domain.WorkOrderServiceStatusInProgress, startedAt,
-		id, domain.WorkOrderServiceStatusPending,
-	)
-	return err
-}
-
-func (r *workOrderServiceRepository) MarkServiceAsFinished(ctx context.Context, id uuid.UUID, finishedAt time.Time) error {
-	query := `
-		UPDATE work_order_services
-		SET status = $1, finished_at = $2, updated_at = $2
-		WHERE id = $3
-		  AND status = $4
-		  AND finished_at IS NULL`
-	_, err := r.db.Exec(ctx, query,
-		domain.WorkOrderServiceStatusFinished, finishedAt,
-		id, domain.WorkOrderServiceStatusInProgress,
-	)
-	return err
-}
-
-func (r *workOrderServiceRepository) FindSupplyShortagesByWorkOrderID(ctx context.Context, workOrderID uuid.UUID) (map[uuid.UUID]bool, error) {
-	query := `
-		SELECT DISTINCT wos.id
-		FROM work_order_services wos
-		JOIN work_order_service_supplies woss ON woss.work_order_service_id = wos.id
-		JOIN supplies s ON s.id = woss.supply_id
-		WHERE wos.work_order_id = $1
-		  AND woss.supply_quantity > s.stock_quantity`
-
-	rows, err := r.db.Query(ctx, query, workOrderID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	shortages := make(map[uuid.UUID]bool)
-	for rows.Next() {
-		var serviceID uuid.UUID
-		if err := rows.Scan(&serviceID); err != nil {
-			return nil, err
-		}
-		shortages[serviceID] = true
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return shortages, nil
-}
-
 func (r *workOrderServiceRepository) CreateSupplyBatch(ctx context.Context, items []*domain.WorkOrderServiceSupply) ([]*domain.WorkOrderServiceSupply, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -350,20 +209,6 @@ func (r *workOrderServiceRepository) CreateSupplyBatch(ctx context.Context, item
 		return nil, fmt.Errorf("create supply batch: commit: %w", err)
 	}
 	return results, nil
-}
-
-func (r *workOrderServiceRepository) HasSupplyShortagesForService(ctx context.Context, workOrderServiceID uuid.UUID) (bool, error) {
-	query := `
-		SELECT EXISTS (
-			SELECT 1
-			FROM work_order_service_supplies woss
-			JOIN supplies s ON s.id = woss.supply_id
-			WHERE woss.work_order_service_id = $1
-			  AND woss.supply_quantity > s.stock_quantity
-		)`
-	var has bool
-	err := r.db.QueryRow(ctx, query, workOrderServiceID).Scan(&has)
-	return has, err
 }
 
 func (r *workOrderServiceRepository) FindApprovedServicesWithShortages(ctx context.Context) ([]SupplyShortageAlert, error) {

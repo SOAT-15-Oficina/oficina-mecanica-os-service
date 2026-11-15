@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Oficina Mecanica - API (monolito)
+  title: Oficina Mecanica - OS Service
   description: |
     API de gerenciamento da oficina: ordens de servico, catalogos, estoque e
     clientes.
@@ -39,6 +39,8 @@ tags:
     description: Endpoints publicos (sem autenticacao)
   - name: Reports
     description: Relatorios de gestao administrativa
+  - name: Internal
+    description: Chamadas servico a servico (Lambda de autenticacao), com X-Service-Token
 
 security:
   - BearerAuth: []
@@ -159,6 +161,65 @@ paths:
           $ref: "#/components/responses/Conflict"
 
   # ── Customers ─────────────────────────────────────────
+  /internal/credentials/verify:
+    post:
+      operationId: postInternalCredentialsVerify
+      tags: [Internal]
+      summary: Verificar usuario e senha (usado pela Lambda de login)
+      security:
+        - ServiceToken: []
+      description: |
+        Hash argon2id no mesmo formato da Lambda. Usuario inexistente e senha errada respondem
+        o mesmo 401, sem revelar quais usuarios existem.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialsRequest"
+      responses:
+        "200":
+          description: Credencial valida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /internal/users:
+    post:
+      operationId: postInternalUsers
+      tags: [Internal]
+      summary: Cadastrar usuario (usado pela Lambda de registro)
+      security:
+        - ServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInternalUserRequest"
+      responses:
+        "201":
+          description: Usuario criado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   /customers:
     post:
       operationId: postCustomers
@@ -665,7 +726,10 @@ paths:
     post:
       operationId: postWorkOrders
       tags: [Work Orders]
-      summary: Criar ordem de servico
+      summary: Criar ordem de servico e iniciar a Saga
+      description: |
+        Na mesma transacao grava a OS (RECEBIDA, filial DEFAULT_BRANCH), a saga (STARTED,
+        passo SCHEDULE_DIAGNOSIS) e o comando execution.schedule-diagnosis no outbox.
       requestBody:
         required: true
         content:
@@ -779,12 +843,11 @@ paths:
     put:
       operationId: putWorkOrdersId
       tags: [Work Orders]
-      summary: Atualizar OS (campos e/ou status)
+      summary: Atualizar campos da OS
       description: |
-        Se o campo `status` for enviado, a transicao de status e processada via maquina de estados.
-        Ao transitar para AGUARDANDO_APROVACAO, o orcamento e enviado por e-mail.
-        Na geracao do orcamento, quando houver insumo com quantidade necessaria maior que o estoque,
-        o prazo estimado do servico no orcamento recebe acrescimo padrao de 2 dias.
+        Altera titulo, descricao e tecnico responsavel. O status e dirigido pela Saga: enviar o
+        campo `status` responde 400. Ao operador restam `POST /work-orders/{id}/deliver` e
+        `POST /work-orders/{id}/cancel`.
       requestBody:
         required: true
         content:
@@ -805,12 +868,104 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
-        "422":
-          description: Transicao de status invalida
+
+  /work-orders/{id}/deliver:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      operationId: postWorkOrdersIdDeliver
+      tags: [Work Orders]
+      summary: Entregar o veiculo (FINALIZADA para ENTREGUE)
+      responses:
+        <<: *protectedResponses
+        "200":
+          description: OS entregue
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/WorkOrder"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /work-orders/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      operationId: postWorkOrdersIdCancel
+      tags: [Work Orders]
+      summary: Cancelar a OS pelo operador
+      description: |
+        Antes do pivo (aceite do reparo pela bancada) dispara a compensacao dos passos ja feitos
+        com motivo CANCELADA_PELO_OPERADOR, incluindo o estorno se a OS ja foi paga. A OS vira
+        CANCELADA quando todas as compensacoes forem confirmadas. Depois do pivo responde 409.
+      responses:
+        <<: *protectedResponses
+        "202":
+          description: Compensacao iniciada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SagaInstance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /work-orders/{id}/history:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      operationId: getWorkOrdersIdHistory
+      tags: [Work Orders]
+      summary: Historico de status da OS
+      responses:
+        <<: *protectedResponses
+        "200":
+          description: Transicoes em ordem, com causa e message_id de origem
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkOrderStatusChange"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /work-orders/{id}/saga:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      operationId: getWorkOrdersIdSaga
+      tags: [Work Orders]
+      summary: Estado da Saga da OS
+      responses:
+        <<: *protectedResponses
+        "200":
+          description: Linha de saga_instances da OS
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SagaInstance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /work-orders/{id}/services:
     parameters:
@@ -874,98 +1029,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           description: Status da OS nao permite remocao
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /work-orders/{id}/services/{wosId}/start:
-    parameters:
-      - $ref: "#/components/parameters/ResourceId"
-      - name: wosId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    put:
-      operationId: putWorkOrdersIdServicesWosIdStart
-      tags: [Work Orders]
-      summary: Iniciar execucao de um servico individual
-      description: |
-        Transiciona o servico de PENDENTE para EM_EXECUCAO.
-        Requer que a OS esteja em EM_EXECUCAO e que o servico esteja aprovado.
-        Bloqueia se os insumos vinculados excedem o estoque disponivel.
-      responses:
-        <<: *protectedResponses
-        "200":
-          description: Servico iniciado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Servico iniciado com sucesso"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          description: Estoque insuficiente, status invalido ou servico nao pertence a OS
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "500":
-          description: Erro interno
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
-  /work-orders/{id}/services/{wosId}/finalize:
-    parameters:
-      - $ref: "#/components/parameters/ResourceId"
-      - name: wosId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    put:
-      operationId: putWorkOrdersIdServicesWosIdFinalize
-      tags: [Work Orders]
-      summary: Finalizar um servico individual
-      description: |
-        Transiciona o servico de EM_EXECUCAO para FINALIZADO.
-        Da baixa no estoque dos insumos vinculados.
-        Se todos os servicos aprovados estiverem finalizados, a OS auto-transiciona para FINALIZADA.
-      responses:
-        <<: *protectedResponses
-        "200":
-          description: Servico finalizado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Servico finalizado com sucesso"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          description: Status invalido ou servico nao pertence a OS
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "500":
-          description: Erro interno
           content:
             application/json:
               schema:
@@ -1066,6 +1129,7 @@ paths:
       security: []
       description: |
         Permite ao cliente consultar o status atual da OS informando o codigo e seu documento (CPF/CNPJ).
+        Inclui o historico de status e, em AGUARDANDO_PAGAMENTO, o link de pagamento.
         Status possiveis: RECEBIDA, EM_DIAGNOSTICO, AGUARDANDO_APROVACAO, APROVADO, EM_EXECUCAO, FINALIZADA, ENTREGUE, CANCELADA.
       parameters:
         - name: document
@@ -1089,148 +1153,16 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
-  /public/approvals/services/{workOrderServiceId}/approve:
-    parameters:
-      - name: workOrderServiceId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: getPublicApprovalsServicesWorkOrderServiceIdApprove
-      tags: [Public]
-      summary: Aprovar um servico da OS
-      security: []
-      description: |
-        Endpoint chamado pelo cliente (via link no e-mail de orcamento) para aprovar um servico especifico.
-        Quando todos os servicos sao aprovados, a OS transita para APROVADO.
-      responses:
-        "200":
-          description: Servico aprovado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-              example:
-                message: Servico aprovado com sucesso
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /public/approvals/services/{workOrderServiceId}/reject:
-    parameters:
-      - name: workOrderServiceId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: getPublicApprovalsServicesWorkOrderServiceIdReject
-      tags: [Public]
-      summary: Reprovar um servico da OS
-      security: []
-      description: |
-        Endpoint chamado pelo cliente (via link no e-mail de orcamento) para recusar um servico especifico.
-        Quando todos os servicos sao reprovados, a OS transita para CANCELADA.
-      responses:
-        "200":
-          description: Servico reprovado
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-              example:
-                message: Servico reprovado com sucesso
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /public/approvals/work-orders/{workOrderId}/approve-all:
-    parameters:
-      - name: workOrderId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: getPublicApprovalsWorkOrdersWorkOrderIdApproveAll
-      tags: [Public]
-      summary: Aprovar todos os servicos de uma OS
-      security: []
-      description: |
-        Endpoint chamado pelo cliente (via link no e-mail de orcamento) para aprovar todos os servicos de uma vez.
-        A OS transita para APROVADO.
-      responses:
-        "200":
-          description: Todos aprovados
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-              example:
-                message: Todos os servicos foram aprovados com sucesso
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
-  /public/approvals/work-orders/{workOrderId}/reject-all:
-    parameters:
-      - name: workOrderId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      operationId: getPublicApprovalsWorkOrdersWorkOrderIdRejectAll
-      tags: [Public]
-      summary: Reprovar todos os servicos de uma OS
-      security: []
-      description: |
-        Endpoint chamado pelo cliente (via link no e-mail de orcamento) para recusar todos os servicos de uma vez.
-        A OS transita para CANCELADA.
-      responses:
-        "200":
-          description: Todos reprovados
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-              example:
-                message: Todos os servicos foram reprovados com sucesso
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-
 components:
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    ServiceToken:
+      type: apiKey
+      in: header
+      name: X-Service-Token
 
   parameters:
     ResourceId:
@@ -1329,18 +1261,13 @@ components:
           RECEBIDA,
           EM_DIAGNOSTICO,
           AGUARDANDO_APROVACAO,
+          AGUARDANDO_PAGAMENTO,
           APROVADO,
           EM_EXECUCAO,
           FINALIZADA,
           ENTREGUE,
           CANCELADA,
         ]
-
-    MessageResponse:
-      type: object
-      properties:
-        message:
-          type: string
 
     User:
       type: object
@@ -1672,9 +1599,6 @@ components:
           type: string
         description:
           type: string
-        status:
-          $ref: "#/components/schemas/WorkOrderStatus"
-          description: Transiciona o status via maquina de estados
         assigned_technician_id:
           type: string
           format: uuid
@@ -1702,8 +1626,15 @@ components:
           format: uuid
         status:
           $ref: "#/components/schemas/WorkOrderStatus"
+        branch:
+          type: string
+          example: MATRIZ
         total_estimated_price_cents:
           type: integer
+        approved_total_cents:
+          type: integer
+        payment_url:
+          type: string
         received_at:
           type: string
           format: date-time
@@ -1958,6 +1889,19 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PublicServiceView"
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              status:
+                $ref: "#/components/schemas/WorkOrderStatus"
+              changed_at:
+                type: string
+                format: date-time
+        payment_url:
+          type: string
+          description: Link do Mercado Pago, presente apenas em AGUARDANDO_PAGAMENTO
       example:
         code: OS-20260713-00AF
         status: AGUARDANDO_APROVACAO
@@ -1968,6 +1912,13 @@ components:
           - title: Troca de Oleo
             status: AGUARDANDO_APROVACAO
             approval_status: PENDENTE
+        history:
+          - status: RECEBIDA
+            changed_at: "2026-07-13T13:15:00Z"
+          - status: EM_DIAGNOSTICO
+            changed_at: "2026-07-13T14:00:00Z"
+          - status: AGUARDANDO_APROVACAO
+            changed_at: "2026-07-13T15:00:00Z"
 
     PublicServiceView:
       type: object
@@ -1981,3 +1932,100 @@ components:
         approval_status:
           type: string
           enum: [PENDENTE, APROVADO, REPROVADO]
+
+    WorkOrderStatusChange:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        work_order_id:
+          type: string
+          format: uuid
+        from:
+          $ref: "#/components/schemas/WorkOrderStatus"
+        to:
+          $ref: "#/components/schemas/WorkOrderStatus"
+        cause:
+          type: string
+          description: tipo da mensagem da Saga ou acao do operador
+          example: billing.quote-approved
+        message_id:
+          type: string
+          format: uuid
+        changed_at:
+          type: string
+          format: date-time
+
+    SagaInstance:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        work_order_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [STARTED, COMPENSATING, COMPLETED, COMPENSATED, FAILED]
+        current_step:
+          type: string
+          example: AWAIT_APPROVAL
+        completed_steps:
+          type: array
+          items:
+            type: string
+        pending_compensations:
+          type: array
+          items:
+            type: string
+        deadline_at:
+          type: string
+          format: date-time
+        attempts:
+          type: integer
+        last_command:
+          type: object
+          properties:
+            destination:
+              type: string
+            envelope:
+              type: object
+        quote_id:
+          type: string
+          format: uuid
+        failure_reason:
+          type: string
+          example: CANCELADA_PELO_OPERADOR
+        version:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CredentialsRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+
+    CreateInternalUserRequest:
+      type: object
+      required: [username, password, role]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        role:
+          type: string
+          enum: [admin, employee]

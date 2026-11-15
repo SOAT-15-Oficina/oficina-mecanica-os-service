@@ -7,7 +7,7 @@
 services:
   sonarqube:
     image: sonarqube:lts-community
-    container_name: oficina-monolith-sonarqube
+    container_name: oficina-os-service-sonarqube
     environment:
       SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
     ports:

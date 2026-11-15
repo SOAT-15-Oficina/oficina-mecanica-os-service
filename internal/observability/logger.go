@@ -9,7 +9,7 @@ import (
 	slogtrace "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"
 )
 
-const DefaultService = "monolith"
+const DefaultService = "os-service"
 
 var version = "dev"
 
@@ -36,6 +36,12 @@ const (
 
 	KeyDecision = "decision"
 
+	KeySagaID      = "saga_id"
+	KeyMessageType = "message_type"
+	KeyMessageID   = "message_id"
+	KeyStep        = "step"
+	KeyReason      = "reason"
+
 	KeyHTTPStatusCode = "http.status_code"
 )
 
@@ -47,6 +53,15 @@ const (
 	EventBudgetSendFailed            = "budget.send_failed"
 	EventApprovalDecided             = "approval.decided"
 	EventPurchaseAlertSent           = "purchase_alert.sent"
+
+	EventSagaStarted             = "saga.started"
+	EventSagaStepCompleted       = "saga.step_completed"
+	EventSagaCompensationStarted = "saga.compensation_started"
+	EventSagaCompensated         = "saga.compensated"
+	EventSagaCompleted           = "saga.completed"
+	EventSagaFailed              = "saga.failed"
+	EventSagaMessageIgnored      = "saga.message_ignored"
+	EventSagaCommandRetried      = "saga.command_retried"
 )
 
 const (
@@ -96,6 +111,17 @@ func Env() string {
 func Version() string { return version }
 
 type loggerKey struct{}
+
+type requestIDKey struct{}
+
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestIDKey{}, requestID)
+}
+
+func RequestID(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDKey{}).(string)
+	return id
+}
 
 func WithLogger(ctx context.Context, logger *slog.Logger) context.Context {
 	return context.WithValue(ctx, loggerKey{}, logger)

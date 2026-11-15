@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
 	"github.com/google/uuid"
 )
 
-var ErrWorkshopServiceTitleAlreadyExists = errors.New("service title already exists")
+var ErrWorkshopServiceTitleAlreadyExists = errors.New("já existe um serviço com esse título")
 
 type DeleteWorkshopServiceResult struct {
 	Deleted             bool

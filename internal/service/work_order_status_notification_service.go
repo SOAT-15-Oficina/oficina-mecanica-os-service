@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/application"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/domain"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/observability"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/application"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/domain"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/observability"
 )
 
 type WorkOrderStatusNotifier interface {
@@ -16,18 +16,15 @@ type WorkOrderStatusNotifier interface {
 type workOrderStatusNotifier struct {
 	custRepo     application.CustomerRepository
 	statusSender application.StatusChangeSender
-	budgetSvc    BudgetService
 }
 
 func NewWorkOrderStatusNotifier(
 	custRepo application.CustomerRepository,
 	statusSender application.StatusChangeSender,
-	budgetSvc BudgetService,
 ) WorkOrderStatusNotifier {
 	return &workOrderStatusNotifier{
 		custRepo:     custRepo,
 		statusSender: statusSender,
-		budgetSvc:    budgetSvc,
 	}
 }
 
@@ -49,12 +46,6 @@ func (n *workOrderStatusNotifier) NotifyTransition(
 		slog.String(observability.KeyTo, string(newStatus)))
 
 	if newStatus == domain.WorkOrderStatusWaitingApproval {
-		previous := previousStatus
-		if err := n.budgetSvc.GenerateAndSendBudget(ctx, workOrder.ID, &previous); err != nil {
-			logger.LogAttrs(ctx, slog.LevelError, "budget generation failed",
-				observability.Event(observability.EventBudgetSendFailed),
-				observability.Err(err))
-		}
 		return
 	}
 
@@ -68,6 +59,10 @@ func (n *workOrderStatusNotifier) NotifyTransition(
 		logger.LogAttrs(ctx, slog.LevelError, "find customer for status notification",
 			observability.Integration(observability.IntegrationRDS),
 			observability.Err(err))
+		return
+	}
+	if customer.Email == "" {
+		logger.WarnContext(ctx, "customer has no email, status notification skipped")
 		return
 	}
 
@@ -89,8 +84,10 @@ func statusChangeMessage(previousStatus, newStatus domain.WorkOrderStatus) strin
 	switch newStatus {
 	case domain.WorkOrderStatusInDiagnosis:
 		return "Sua ordem de serviço entrou em diagnóstico. Em breve nossa equipe concluirá a avaliação do veículo."
+	case domain.WorkOrderStatusWaitingPayment:
+		return "Seu orçamento foi aprovado. Você receberá por e-mail o link para pagamento."
 	case domain.WorkOrderStatusApproved:
-		return "Seu orçamento foi aprovado. Em seguida iniciaremos a execução dos serviços autorizados."
+		return "Pagamento confirmado. Em seguida iniciaremos a execução dos serviços autorizados."
 	case domain.WorkOrderStatusCanceled:
 		if previousStatus == domain.WorkOrderStatusWaitingApproval {
 			return "Seu orçamento foi recusado e a ordem de serviço foi cancelada."

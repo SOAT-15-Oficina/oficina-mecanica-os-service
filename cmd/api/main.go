@@ -4,12 +4,15 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/config"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/database"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/observability"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/routes"
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/packages/email"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/config"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/database"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/observability"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/routes"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/packages/email"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -40,7 +43,10 @@ func runMigrations() {
 	}
 	defer db.Close()
 
-	database.RunMigrations(db)
+	if err := database.RunMigrations(db); err != nil {
+		shutdownApp(err, "failed to run migrations", observability.Integration(observability.IntegrationRDS))
+	}
+	slog.Info("migrations applied successfully")
 }
 
 func runServer() {
@@ -53,20 +59,43 @@ func runServer() {
 	if err != nil {
 		shutdownApp(err, "failed to connect to database", observability.Integration(observability.IntegrationRDS))
 	}
+	defer db.Close()
 
 	emailProv, err := newEmailProvider(cfg)
 	if err != nil {
 		shutdownApp(err, "failed to create email provider", observability.Integration(observability.IntegrationSES))
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	orchestrator := routes.NewOrchestrator(db, cfg, emailProv)
+	workers, err := startWorkers(ctx, cfg, db, orchestrator)
+	if err != nil {
+		shutdownApp(err, "failed to start saga workers")
+	}
+
 	slog.Info("dependencies initialized successfully")
 
 	app := fiber.New(fiber.Config{})
-	routes.RegisterRoutes(app, db, cfg, emailProv)
+	routes.RegisterRoutes(app, db, cfg, orchestrator)
 
-	if err := app.Listen(":" + cfg.Server.Port); err != nil {
+	listenErr := make(chan error, 1)
+	go func() { listenErr <- app.Listen(":" + cfg.Server.Port) }()
+
+	select {
+	case err := <-listenErr:
+		stop()
+		workers.Wait()
 		shutdownApp(err, "failed to start server")
+	case <-ctx.Done():
 	}
+
+	slog.Info("shutting down")
+	if err := app.ShutdownWithTimeout(20 * time.Second); err != nil {
+		slog.Error("http shutdown failed", observability.Err(err))
+	}
+	workers.Wait()
 }
 
 func mustLoadConfig() *config.Config {

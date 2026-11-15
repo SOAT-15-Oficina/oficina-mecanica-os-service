@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SOAT-15-Oficina/oficina-mecanica-monolith/internal/config"
+	"github.com/SOAT-15-Oficina/oficina-mecanica-os-service/internal/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
