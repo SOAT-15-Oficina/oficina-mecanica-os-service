@@ -17,25 +17,25 @@ const (
 )
 
 var uniqueConstraintMessages = map[string]string{
-	"users_username_key":                            "username already taken",
-	"customers_document_key":                        "document already registered",
-	"vehicles_license_plate_key":                    "license plate already registered",
-	"supplies_code_key":                             "supply code already registered",
-	"idx_services_title_unique":                     "service title already exists",
-	"idx_work_order_service_supplies_wos_supply_id": "supply already added to this service",
+	"users_username_key":                            "nome de usuário já está em uso",
+	"customers_document_key":                        "documento já cadastrado",
+	"vehicles_license_plate_key":                    "placa já cadastrada",
+	"supplies_code_key":                             "código de insumo já cadastrado",
+	"idx_services_title_unique":                     "já existe um serviço com esse título",
+	"idx_work_order_service_supplies_wos_supply_id": "insumo já adicionado a este serviço",
 }
 
 var foreignKeyMessages = map[string]string{
-	"fk_vehicles_customer":      "customer not found",
-	"fk_work_orders_customer":   "customer not found",
-	"fk_work_orders_vehicle":    "vehicle not found",
-	"fk_work_orders_opened_by":  "user not found",
-	"fk_work_orders_technician": "user not found",
-	"fk_wos_work_order":         "work order not found",
-	"fk_wos_service":            "service not found",
-	"fk_wosi_work_order_s":      "work order service not found",
+	"fk_vehicles_customer":      "cliente não encontrado",
+	"fk_work_orders_customer":   "cliente não encontrado",
+	"fk_work_orders_vehicle":    "veículo não encontrado",
+	"fk_work_orders_opened_by":  "usuário não encontrado",
+	"fk_work_orders_technician": "usuário não encontrado",
+	"fk_wos_work_order":         "ordem de serviço não encontrada",
+	"fk_wos_service":            "serviço não encontrado",
+	"fk_wosi_work_order_s":      "serviço da ordem não encontrado",
 	"fk_wosi_supply":            "insumo vinculado a uma OS e não pode ser removido",
-	"fk_wosh_work_order":        "work order service not found",
+	"fk_wosh_work_order":        "serviço da ordem não encontrado",
 }
 
 func dbErrResponse(c fiber.Ctx, err error, notFoundMsg string) (bool, error) {
@@ -49,13 +49,13 @@ func dbErrResponse(c fiber.Ctx, err error, notFoundMsg string) (bool, error) {
 		case pgErrUniqueViolation:
 			msg := uniqueConstraintMessages[pgErr.ConstraintName]
 			if msg == "" {
-				msg = "resource already exists"
+				msg = "registro já existe"
 			}
 			return true, c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": msg})
 		case pgErrForeignKeyViolation:
 			msg := foreignKeyMessages[pgErr.ConstraintName]
 			if msg == "" {
-				msg = "resource conflicts with an existing relationship"
+				msg = "registro conflita com um relacionamento existente"
 			}
 			return true, c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": msg})
 		case pgErrNotNullViolation, pgErrCheckViolation:

@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var ErrWorkshopServiceTitleAlreadyExists = errors.New("service title already exists")
+var ErrWorkshopServiceTitleAlreadyExists = errors.New("já existe um serviço com esse título")
 
 type DeleteWorkshopServiceResult struct {
 	Deleted             bool

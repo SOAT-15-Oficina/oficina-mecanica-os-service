@@ -16,6 +16,7 @@ type route struct {
 	steps        []string
 	forward      handlerFunc
 	compensating handlerFunc
+	compensated  handlerFunc
 }
 
 var routes = map[string]route{
@@ -26,7 +27,7 @@ var routes = map[string]route{
 	messaging.TypeQuoteApproved:      {steps: []string{StepAwaitApproval}, forward: onQuoteApproved},
 	messaging.TypeQuoteRejected:      {steps: []string{StepAwaitApproval}, forward: onQuoteRejected},
 	messaging.TypePaymentRequested:   {steps: []string{StepRequestPayment}, forward: onPaymentRequested},
-	messaging.TypePaymentConfirmed:   {steps: []string{StepAwaitPayment}, forward: onPaymentConfirmed, compensating: onLatePayment},
+	messaging.TypePaymentConfirmed:   {steps: []string{StepAwaitPayment}, forward: onPaymentConfirmed, compensating: onLatePayment, compensated: onPaymentAfterCompensation},
 	messaging.TypePaymentFailed:      {steps: []string{StepRequestPayment, StepAwaitPayment}, forward: onPaymentFailed},
 	messaging.TypeRepairEnqueued:     {steps: []string{StepEnqueueRepair}, forward: onRepairEnqueued},
 	messaging.TypeRepairRejected:     {steps: []string{StepEnqueueRepair}, forward: onRepairRejected},
@@ -55,6 +56,11 @@ func dispatch(ctx context.Context, r *run, env messaging.Envelope) (bool, error)
 			return false, nil
 		}
 		return rt.compensating(ctx, r)
+	case domain.SagaCompensated:
+		if rt.compensated == nil {
+			return false, nil
+		}
+		return rt.compensated(ctx, r)
 	default:
 		return false, nil
 	}
@@ -245,6 +251,9 @@ func onRepairCompleted(ctx context.Context, r *run) (bool, error) {
 		return false, err
 	}
 	if err := consumeSupplies(ctx, r.tx, r.inst.WorkOrderID, nil, r.now); err != nil {
+		return false, err
+	}
+	if err := finishApprovedItems(ctx, r.tx, r.inst.WorkOrderID, r.now); err != nil {
 		return false, err
 	}
 	r.completeStep(StepAwaitRepair)

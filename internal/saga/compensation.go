@@ -101,6 +101,19 @@ func onLatePayment(ctx context.Context, r *run) (bool, error) {
 	return true, nil
 }
 
+func onPaymentAfterCompensation(ctx context.Context, r *run) (bool, error) {
+	if r.inst.HasCompleted(StepAwaitPayment) {
+		return false, nil
+	}
+	r.inst.Complete(StepAwaitPayment)
+	r.inst.Status = domain.SagaCompensating
+	r.inst.PendingCompensations = []string{messaging.TypeRefundPayment}
+	r.log(slog.LevelWarn, "saga compensation started", observability.EventSagaCompensationStarted,
+		slog.String(observability.KeyReason, ReasonLatePayment),
+		slog.Any("pending_compensations", r.inst.PendingCompensations))
+	return true, sendCompensation(ctx, r)
+}
+
 func (o *Orchestrator) Cancel(ctx context.Context, workOrderID uuid.UUID) (*domain.SagaInstance, error) {
 	var out *domain.SagaInstance
 	err := o.inTx(ctx, func(tx pgx.Tx, eff *effects) error {

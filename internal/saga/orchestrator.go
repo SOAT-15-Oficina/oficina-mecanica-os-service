@@ -32,9 +32,10 @@ const (
 )
 
 const (
-	ReasonNoItems    = "SEM_ITENS"
-	ReasonNoEmail    = "SEM_EMAIL"
-	ReasonNoResponse = "SEM_RESPOSTA"
+	ReasonNoItems     = "SEM_ITENS"
+	ReasonNoEmail     = "SEM_EMAIL"
+	ReasonNoResponse  = "SEM_RESPOSTA"
+	ReasonLatePayment = "PAGAMENTO_TARDIO"
 )
 
 const (

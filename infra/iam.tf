@@ -22,8 +22,9 @@ data "aws_iam_policy_document" "assume" {
 }
 
 resource "aws_iam_role" "service" {
-  name               = local.name
-  assume_role_policy = data.aws_iam_policy_document.assume.json
+  name                 = local.name
+  assume_role_policy   = data.aws_iam_policy_document.assume.json
+  permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/oficina-mecanica-${var.environment}-service-boundary"
 }
 
 data "aws_iam_policy_document" "service" {
