@@ -31,11 +31,11 @@ Funcionalidade: Ciclo de vida da ordem de serviço atravessando os três micross
     E a saga fica "COMPENSATED"
     E a ficha da bancada fica "CANCELADO"
 
-  Cenário: pagamento recusado pelo Mercado Pago
+  Cenário: QR Code do pagamento expira sem ser pago
     Quando o operador abre uma ordem de serviço
     E o mecânico conclui o diagnóstico incluindo os dois serviços
     E o cliente aprova o orçamento inteiro
-    E o Mercado Pago recusa o pagamento
+    E o QR Code do pagamento expira
     Então a OS fica "CANCELADA"
     E a saga fica "COMPENSATED"
     E o orçamento fica "CANCELADO"

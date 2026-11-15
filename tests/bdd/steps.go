@@ -26,7 +26,8 @@ type quote struct {
 	ID       string `json:"id"`
 	Status   string `json:"status"`
 	Payments []struct {
-		Status string `json:"status"`
+		Status          string `json:"status"`
+		ProviderOrderID string `json:"provider_order_id"`
 	} `json:"payments"`
 }
 
@@ -149,22 +150,23 @@ func (s *scenario) decideWholeQuote(decision string) func(context.Context) error
 	}
 }
 
-func (s *scenario) payment(status string) func(context.Context) error {
+func (s *scenario) payment(action string) func(context.Context) error {
 	return func(ctx context.Context) error {
 		if err := s.workOrderStatus(ctx, "AGUARDANDO_PAGAMENTO"); err != nil {
 			return err
 		}
-		var wo struct {
-			PaymentURL string `json:"payment_url"`
-		}
+		var orderID string
 		if err := eventually(ctx, waitFor, func() (bool, string, error) {
-			err := s.c.call(ctx, http.MethodGet, "/work-orders/"+s.workOrderID, nil, &wo)
-			return wo.PaymentURL != "", wo.PaymentURL, err
+			q, err := s.currentQuote(ctx)
+			if err != nil || len(q.Payments) == 0 {
+				return false, "sem pagamento", err
+			}
+			orderID = q.Payments[len(q.Payments)-1].ProviderOrderID
+			return orderID != "", orderID, nil
 		}); err != nil {
 			return err
 		}
-		preference := wo.PaymentURL[strings.LastIndex(wo.PaymentURL, "/")+1:]
-		_, err := s.c.do(ctx, http.MethodPost, s.c.mpfake+"/checkout/"+preference+"/pay?status="+status, nil, nil)
+		_, err := s.c.do(ctx, http.MethodPost, s.c.mpfake+"/__orders/"+orderID+"/"+action, nil, nil)
 		return err
 	}
 }

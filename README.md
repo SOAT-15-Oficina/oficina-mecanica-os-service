@@ -279,7 +279,7 @@ JWT_SECRET_KEY=local-dev-secret go run ./tests/tools/token -role admin -user adm
 |---|---|
 | OS paga é executada até o fim | caminho feliz: 7 transições na ordem, saga `COMPLETED` |
 | cliente reprova o orçamento | caso A: compensação cancela a ficha da bancada |
-| pagamento recusado pelo Mercado Pago | caso B: cancela orçamento e ficha |
+| QR Code do pagamento expira sem ser pago | caso B: `payment-failed` (`EXPIRADO`) cancela orçamento e ficha |
 | bancada recusa o reparo depois do pagamento | caso C: estorno no Mercado Pago, reserva liberada, ficha cancelada |
 
 Roda contra o ambiente local completo do `oficina-mecanica-infrastructure`:
@@ -290,6 +290,15 @@ docker compose -f local/docker-compose.local.yml up -d --build --wait
 cd ../oficina-mecanica-monolith/tests/bdd
 go test -tags bdd -count=1 -v .
 ```
+
+O pagamento é por QR Code dinâmico (Orders API do Mercado Pago). Os passos de
+pagamento leem o id da order em `GET /billing/quotes/by-work-order/{id}`
+(`payments[-1].provider_order_id`) e acionam o fake do Mercado Pago:
+"o Mercado Pago confirma o pagamento" faz `POST {mpfake}/__orders/{id}/pay` e
+"o QR Code do pagamento expira" faz `POST {mpfake}/__orders/{id}/expire`; o
+fake chama o webhook do Billing como o Mercado Pago real. Order QR não tem
+recusa (um cartão recusado no app só deixa a order expirar), por isso o caso B
+é a expiração.
 
 `BDD_API_URL` (padrão `http://localhost:8080/api`) e `BDD_MPFAKE_URL` (padrão
 `http://localhost:8095`) apontam para outro ambiente. A build tag `bdd` deixa
