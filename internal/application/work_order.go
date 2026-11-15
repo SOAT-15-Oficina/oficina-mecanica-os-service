@@ -11,7 +11,7 @@ import (
 
 var (
 	ErrNotFound          = errors.New("not found")
-	ErrSagaNotCancelable = errors.New("work order can no longer be canceled: saga is past the pivot or already finished")
+	ErrSagaNotCancelable = errors.New("a ordem de serviço não pode mais ser cancelada: a saga já passou do ponto de não retorno ou foi encerrada")
 )
 
 // ValidationError represents input that is syntactically valid but violates

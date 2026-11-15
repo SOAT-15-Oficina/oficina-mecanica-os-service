@@ -250,3 +250,14 @@ func markItemFinished(ctx context.Context, tx pgx.Tx, workOrderID, itemID uuid.U
 		WHERE id = $2 AND work_order_id = $1 AND finished_at IS NULL`, workOrderID, itemID, at)
 	return err
 }
+
+func finishApprovedItems(ctx context.Context, tx pgx.Tx, workOrderID uuid.UUID, at time.Time) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE work_order_services
+		SET status = 'FINALIZADO', finished_at = $2, started_at = COALESCE(started_at, $2), updated_at = $2
+		WHERE work_order_id = $1 AND approval_status = 'APROVADO' AND finished_at IS NULL`, workOrderID, at)
+	if err != nil {
+		return fmt.Errorf("finish approved items: %w", err)
+	}
+	return nil
+}

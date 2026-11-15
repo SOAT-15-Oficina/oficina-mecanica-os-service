@@ -184,3 +184,31 @@ func TestPlanCompensation(t *testing.T) {
 	inst.Complete(StepAwaitPayment)
 	assert.Equal(t, []string{messaging.TypeRefundPayment, messaging.TypeCancelTicket}, planCompensation(inst, false))
 }
+
+func TestPaymentConfirmedAfterCompensationRefundsTheLatePayment(t *testing.T) {
+	email := "ana@example.com"
+	f := newFixture(t, &email)
+	f.toAwaitPayment()
+	f.deliver(messaging.TypePaymentFailed, messaging.PaymentFailed{Reason: messaging.ReasonExpired})
+	f.deliver(messaging.TypeQuoteCanceled, messaging.QuoteCanceled{})
+	f.deliver(messaging.TypeTicketCanceled, messaging.TicketCanceled{})
+	require.Equal(t, domain.SagaCompensated, f.saga().Status)
+
+	f.deliver(messaging.TypePaymentConfirmed, messaging.PaymentConfirmed{PaymentID: uuid.New(), AmountCents: 20000})
+	inst := f.saga()
+	assert.Equal(t, domain.SagaCompensating, inst.Status)
+	assert.Equal(t, []string{messaging.TypeRefundPayment}, inst.PendingCompensations)
+	assert.Equal(t, messaging.TypeRefundPayment, f.lastCommand().Type)
+	assert.Equal(t, billingInbox, inst.LastCommand.Destination)
+
+	f.deliver(messaging.TypePaymentConfirmed, messaging.PaymentConfirmed{PaymentID: uuid.New(), AmountCents: 20000})
+	assert.Equal(t, []string{messaging.TypeRefundPayment}, f.saga().PendingCompensations)
+
+	f.deliver(messaging.TypePaymentRefunded, messaging.PaymentRefunded{})
+	assert.Equal(t, domain.SagaCompensated, f.saga().Status)
+	assert.Equal(t, domain.WorkOrderStatusCanceled, f.status())
+
+	f.deliver(messaging.TypePaymentConfirmed, messaging.PaymentConfirmed{PaymentID: uuid.New(), AmountCents: 20000})
+	assert.Equal(t, domain.SagaCompensated, f.saga().Status)
+	assert.Empty(t, f.saga().PendingCompensations)
+}

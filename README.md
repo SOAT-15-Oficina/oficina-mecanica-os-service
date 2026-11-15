@@ -326,11 +326,17 @@ Os testes do orquestrador (`internal/saga`) rodam contra o Postgres real com
 relógio controlado: caminho feliz até `ENTREGUE` (incluindo o tempo médio de
 execução vindo de `item-started`/`item-finished`), casos A, B e C, cliente sem
 e-mail, OS sem itens, cancelamento antes e depois do pivô, pagamento tardio
-durante a compensação, reenvio com o mesmo `message_id` até o limite, prazos de
+durante a compensação e depois dela (estorno automático), reenvio com o mesmo `message_id` até o limite, prazos de
 aprovação e pagamento, mensagem duplicada, fora de ordem, de outra saga e
 depois do fim, e conflito de versão.
 
 Cobertura medida em 2026-11-11 (`scripts/coverage-gate.sh`): **83,3%**.
+
+**Evidência no CI:** [execução do PR #9 para
+`main`](https://github.com/SOAT-15-Oficina/oficina-mecanica-os-service/actions/runs/43680140518).
+A aba *Summary* mostra o resumo do SonarQube publicado pelo job `quality`:
+Quality Gate, cobertura, bugs, vulnerabilidades e duplicação. O job `test` da
+mesma execução imprime a cobertura do `scripts/coverage-gate.sh`.
 
 | Pacote | Cobertura |
 |---|---|

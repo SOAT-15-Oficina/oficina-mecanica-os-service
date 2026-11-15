@@ -145,6 +145,9 @@ func TestRepairCompletedRightAfterRepairStartedWithoutItems(t *testing.T) {
 
 	assert.Equal(t, domain.WorkOrderStatusFinished, f.status())
 	assert.Equal(t, "CONSUMIDA", f.reservationStatus())
+	var status string
+	require.NoError(t, f.db.QueryRow(f.ctx, `SELECT status FROM work_order_services WHERE id = $1`, f.itemID).Scan(&status))
+	assert.Equal(t, "FINALIZADO", status)
 }
 
 func TestSagaViewSerializesState(t *testing.T) {
