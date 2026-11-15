@@ -33,8 +33,8 @@ locals {
   alb_listener_arn    = data.aws_ssm_parameter.platform["alb_listener_arn"].value
   billing_inbox_arn   = data.aws_ssm_parameter.platform["billing_inbox_queue_arn"].value
   execution_inbox_arn = data.aws_ssm_parameter.platform["execution_inbox_queue_arn"].value
-  event_topic_arns = [
-    data.aws_ssm_parameter.platform["billing_events_topic_arn"].value,
-    data.aws_ssm_parameter.platform["execution_events_topic_arn"].value,
-  ]
+  event_topic_arns = {
+    billing   = nonsensitive(data.aws_ssm_parameter.platform["billing_events_topic_arn"].value)
+    execution = nonsensitive(data.aws_ssm_parameter.platform["execution_events_topic_arn"].value)
+  }
 }
