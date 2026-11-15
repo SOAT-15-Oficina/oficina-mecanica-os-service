@@ -1,0 +1,76 @@
+name: Destroy
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: destroy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: "1.9.8"
+  SERVICE: os-service
+  SHORT: os
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'hml' && 'homolog' || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target environment
+        run: |
+          case "$GITHUB_REF_NAME" in
+            main) ENVIRONMENT=prod ;;
+            hml)  ENVIRONMENT=homolog ;;
+            *)
+              echo "branch $GITHUB_REF_NAME nao mapeia para nenhum ambiente"
+              exit 1
+              ;;
+          esac
+          {
+            echo "ENVIRONMENT=$ENVIRONMENT"
+            echo "SSM_PREFIX=/oficina-mecanica/$ENVIRONMENT"
+            echo "OVERLAY=k8s/overlays/$ENVIRONMENT"
+          } >> "$GITHUB_ENV"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Delete Kubernetes objects
+        continue-on-error: true
+        run: |
+          get() { aws ssm get-parameter --name "${SSM_PREFIX}/$1" --query Parameter.Value --output text 2>/dev/null || true; }
+          CLUSTER="$(get eks_cluster_name)"
+          NAMESPACE="$(get kube_namespace)"
+          if [ -z "$CLUSTER" ] || [ -z "$NAMESPACE" ] || ! aws eks describe-cluster --name "$CLUSTER" >/dev/null 2>&1; then
+            echo "cluster ausente: nada a remover no Kubernetes"
+            exit 0
+          fi
+          aws eks update-kubeconfig --name "$CLUSTER"
+          kubectl kustomize "$OVERLAY" \
+            | kubectl -n "$NAMESPACE" delete -f - --ignore-not-found --wait --timeout=180s
+          kubectl -n "$NAMESPACE" get jobs,configmaps,secrets -o name \
+            | { grep -E "^(job.batch/${SERVICE}-migrate-|configmap/${SHORT}-config-|secret/${SHORT}-secrets)" || true; } \
+            | xargs -r kubectl -n "$NAMESPACE" delete --ignore-not-found
+
+      - name: Destroy service infrastructure
+        run: |
+          terraform -chdir=infra init -input=false -backend-config="${ENVIRONMENT}.s3.tfbackend"
+          if [ -z "$(terraform -chdir=infra state list)" ]; then
+            echo "state de $SERVICE em $ENVIRONMENT vazio: nada a destruir"
+            exit 0
+          fi
+          terraform -chdir=infra destroy -input=false -auto-approve -lock-timeout=10m -var-file="${ENVIRONMENT}.tfvars"

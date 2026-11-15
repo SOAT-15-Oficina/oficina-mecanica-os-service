@@ -374,10 +374,15 @@ banco, segredo, role, target group e SG do banco. `INTERNAL_SERVICE_TOKEN` e
 |---|---|
 | PR → `main`/`hml` | lint (actionlint, redocly, `terraform fmt`/`validate`, kubeconform), test (Postgres + gate de 80%), quality (SonarQube efêmero, Quality Gate com cobertura ≥ 80%) |
 | push → `main`/`hml` | deploy: `terraform apply`, build e push no ECR, Secret, `kubectl apply` do overlay, Job `migrate`, rollout, smoke (`/ready`, `/ping`, swagger servido igual ao do repositório) |
+| `destroy.yml` (manual, na branch do ambiente) | remove os objetos do `k8s/` (se o cluster existir), libera o `TargetGroupBinding` e roda `terraform destroy` em `infra/` |
 
 A branch escolhe o ambiente (`hml` → homologação, `main` → produção). Secrets e
 variables: `AWS_DEPLOY_ROLE_ARN` (de Environment), `AWS_REGION` e
 `SES_SENDER_EMAIL` (variables).
+
+O `destroy.yml` é disparado pelo `tear-down.yml` do `-infrastructure` antes
+dos de Billing e Execution, porque as assinaturas da `os-inbox` ficam nos
+tópicos deles. Com o state vazio ele não faz nada.
 
 [rfc6]: https://github.com/SOAT-15-Oficina/oficina-mecanica-infrastructure/blob/main/docs/rfc/0006-microsservicos-e-saga.md
 [adr13]: https://github.com/SOAT-15-Oficina/oficina-mecanica-infrastructure/blob/main/docs/adr/0013-saga-orquestrada-no-os-service.md
