@@ -353,14 +353,15 @@ jobs:
             --from-env-file=/tmp/secrets.env --dry-run=client -o yaml | kubectl apply -f -
           rm -f /tmp/secrets.env
 
-      - name: Apply manifests
-        run: kubectl kustomize "$OVERLAY" | kubectl -n "$KUBE_NAMESPACE" apply -f -
+      - name: Apply manifests except the Deployment
+        run: |
+          kubectl kustomize "$OVERLAY" > /tmp/manifests.yaml
+          yq 'select(.kind != "Deployment")' /tmp/manifests.yaml | kubectl -n "$KUBE_NAMESPACE" apply -f -
 
       - name: Run migrations
         run: |
           JOB="${SERVICE}-migrate-${GITHUB_SHA::12}"
-          CONFIG="$(kubectl -n "$KUBE_NAMESPACE" get deployment "$SERVICE" \
-            -o jsonpath='{.spec.template.spec.containers[0].envFrom[0].configMapRef.name}')"
+          CONFIG="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].envFrom[0].configMapRef.name' /tmp/manifests.yaml)"
           kubectl -n "$KUBE_NAMESPACE" delete job "$JOB" --ignore-not-found
           kubectl -n "$KUBE_NAMESPACE" apply -f - <<YAML
           apiVersion: batch/v1
@@ -385,6 +386,9 @@ jobs:
           YAML
           kubectl -n "$KUBE_NAMESPACE" wait --for=condition=complete "job/$JOB" --timeout=300s \
             || { kubectl -n "$KUBE_NAMESPACE" logs "job/$JOB" --tail=200; exit 1; }
+
+      - name: Apply manifests
+        run: kubectl -n "$KUBE_NAMESPACE" apply -f /tmp/manifests.yaml
 
       - name: Wait for rollout
         run: kubectl -n "$KUBE_NAMESPACE" rollout status "deployment/${SERVICE}" --timeout=300s
